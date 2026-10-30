@@ -23,6 +23,7 @@ export interface GameServer {
 
 export function createGameServer(settings: Partial<RoomSettings> = {}): GameServer {
   const app = express();
+  app.disable('x-powered-by');
   const http = createServer(app);
   const io = new Server<ClientToServer, ServerToClient>(http, {
     // Small messages only; anything bigger is not from our client.

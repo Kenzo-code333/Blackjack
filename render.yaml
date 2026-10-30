@@ -1,0 +1,14 @@
+# Render "Blueprint": tells Render how to build and run this app.
+# Render → New → Blueprint → pick this repository → Apply.
+services:
+  - type: web
+    name: blackjack
+    runtime: node
+    plan: free
+    buildCommand: npm ci && npm run build
+    startCommand: npm start
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
