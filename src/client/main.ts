@@ -3,6 +3,7 @@
 //   /table/ABC123    → join (or rejoin) that table
 
 import './style.css';
+import { Sound } from './audio.js';
 import { h, toast } from './dom.js';
 import { Hud } from './hud.js';
 import { Net, forgetSession, savedSession } from './net.js';
@@ -13,6 +14,20 @@ import { Table2D } from './table2d.js';
 
 const app = document.getElementById('app')!;
 const net = new Net();
+const sound = new Sound(prefs.muted);
+
+// Browsers only allow sound after the first tap or click.
+window.addEventListener('pointerdown', () => sound.unlock(), { capture: true });
+window.addEventListener('keydown', () => sound.unlock(), { capture: true });
+
+/** Phones and small/older machines start in low graphics unless the player chose otherwise. */
+function defaultLowGraphics(): boolean {
+  const saved = prefs.lowGraphics;
+  if (saved !== null) return saved;
+  const touch = matchMedia('(pointer: coarse)').matches;
+  const cores = navigator.hardwareConcurrency || 4;
+  return touch || cores <= 4;
+}
 
 let teardown: (() => void) | null = null;
 
@@ -98,31 +113,70 @@ function showTable(): void {
   const code = net.session!.code;
   document.title = `Table ${code} · Blackjack`;
   const stage = h('div', { class: 'stage' });
-  const view = h('div', { class: 'table-view' }, stage);
+  const loading = h('div', { class: 'loading' }, 'Setting up the table…');
+  const view = h('div', { class: 'table-view' }, stage, loading);
   mount(view);
 
-  let low = prefs.lowGraphics ?? false;
-  const renderer: TableRenderer = new Table2D(stage);
+  let low = defaultLowGraphics();
+  let renderer: TableRenderer | null = null;
+  let disposed = false;
+
   const hud = new Hud(net, {
     muted: prefs.muted,
     lowGraphics: low,
     onLeave: () => go('/'),
-    onToggleMute: () => (prefs.muted = !prefs.muted),
+    onToggleMute: () => {
+      prefs.muted = !prefs.muted;
+      sound.muted = prefs.muted;
+      return prefs.muted;
+    },
     onToggleGraphics: () => {
       low = !low;
       prefs.lowGraphics = low;
-      renderer.setLowGraphics(low);
+      renderer?.setLowGraphics(low);
       return low;
     },
+    onInteract: () => sound.unlock(),
+    sound: (name) => sound.play(name),
   });
   view.append(hud.el);
 
-  const render = () => {
-    if (!net.state) return;
-    hud.update(net.state);
+  const bet = (value: number) => {
+    sound.play('chip');
+    void net.bet(value).then((r) => !r.ok && toast(r.error, 'error'));
   };
+
+  // The 3D scene is a separate download, so the home screen stays quick.
+  const start = async () => {
+    try {
+      const { Table3D, webglAvailable } = await import('./three/scene3d.js');
+      if (disposed) return;
+      if (!webglAvailable()) throw new Error('WebGL not available');
+      renderer = new Table3D(stage, {
+        sound,
+        low,
+        onChipClick: bet,
+        onAutoLow: () => {
+          low = true;
+          hud.setLowGraphics(true);
+          toast('Switched to low graphics for smoother play');
+        },
+      });
+    } catch (err) {
+      console.warn('3D unavailable, using the 2D table', err);
+      if (disposed) return;
+      renderer = new Table2D(stage);
+    }
+    loading.remove();
+    if (net.state) {
+      renderer.update(net.state, [], net.me);
+      hud.update(net.state);
+    }
+  };
+  void start();
+
   net.onState = (state, events) => {
-    renderer.update(state, events, net.me);
+    renderer?.update(state, events, net.me);
     hud.update(state);
   };
   net.onChat = (m) => hud.addChat(m);
@@ -138,17 +192,15 @@ function showTable(): void {
     go('/');
   };
   hud.setConnection(net.status);
-  if (net.state) {
-    renderer.update(net.state, [], net.me);
-    render();
-  }
+  if (net.state) hud.update(net.state);
 
   teardown = () => {
+    disposed = true;
     net.onState = () => {};
     net.onChat = () => {};
     net.onChatHistory = () => {};
     hud.dispose();
-    renderer.dispose();
+    renderer?.dispose();
   };
 }
 

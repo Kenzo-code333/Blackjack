@@ -365,6 +365,12 @@ export class Hud {
     this.updateToggles();
   }
 
+  /** Called when the scene lowered graphics on its own. */
+  setLowGraphics(low: boolean): void {
+    this.opts.lowGraphics = low;
+    this.updateToggles();
+  }
+
   private toggleGfx(): void {
     this.opts.lowGraphics = this.opts.onToggleGraphics();
     this.updateToggles();
