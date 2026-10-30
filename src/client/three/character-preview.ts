@@ -58,7 +58,7 @@ export class CharacterPreview {
     this.t += dt;
     if (this.body) {
       this.body.group.rotation.y = Math.sin(this.t * 0.6) * 0.55;
-      this.blinker.update(dt, this.body.head.eyes);
+      this.blinker.update(dt, this.body.head.lids);
     }
     this.renderer.render(this.scene, this.camera);
   };

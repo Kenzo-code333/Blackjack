@@ -73,7 +73,8 @@ export class Dealer {
   readonly limbs = new THREE.Group();
   private readonly torso: THREE.Group;
   private readonly head: THREE.Group;
-  private readonly eyes: THREE.Object3D[] = [];
+  /** Eyelids (open = 0.15, closed = 1 on y). */
+  private readonly lids: THREE.Object3D[] = [];
   readonly arms: Record<Side, Arm>;
   private readonly lookTarget = new THREE.Vector3(0, 1.2, 1.5);
   private readonly lookCurrent = new THREE.Vector3(0, 1.2, 1.5);
@@ -144,7 +145,7 @@ export class Dealer {
     const face = buildHead(DEALER_LOOK);
     face.group.scale.setScalar(1.08);
     this.head.add(face.group);
-    this.eyes.push(...face.eyes);
+    this.lids.push(...face.lids);
 
     this.arms = {
       left: new Arm('left', shirt, skin, this.limbs),
@@ -224,9 +225,9 @@ export class Dealer {
 
     // Blink every few seconds.
     this.blinkTimer -= dt;
-    const blink = this.blinkTimer < 0.12 ? 0.1 : 1;
+    const blink = this.blinkTimer < 0.12 ? 1 : 0.15;
     if (this.blinkTimer < 0) this.blinkTimer = 2 + Math.random() * 3.5;
-    for (const e of this.eyes) e.scale.y = blink;
+    for (const e of this.lids) e.scale.y = blink;
 
     // Arms: hands ease toward targets; shoulders move with the torso.
     this.torso.updateMatrixWorld();

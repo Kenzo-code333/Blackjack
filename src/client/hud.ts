@@ -11,6 +11,8 @@ export interface SoundControls {
   readonly muted: boolean;
   readonly music: number;
   readonly sfx: number;
+  readonly voice: boolean;
+  setVoice(on: boolean): void;
   setMuted(m: boolean): void;
   setMusic(v: number): void;
   setSfx(v: number): void;
@@ -38,6 +40,7 @@ export class Hud {
   private lastBet = 0;
   private lastPhase = '';
   private myCardsKey = '';
+  private celebrationTimer: ReturnType<typeof setTimeout> | undefined;
   private shownCards = new Set<string>();
   private unreadChat = 0;
   private timerFrame = 0;
@@ -58,6 +61,10 @@ export class Hud {
   private readonly actionButtons = new Map<Action, HTMLButtonElement>();
   private readonly insuranceRow = h('div', { class: 'row insurance' });
   private readonly insuranceText = h('span', { class: 'insurance-text' });
+  private insuranceYes!: HTMLButtonElement;
+  private readonly invitePanel: HTMLElement;
+  private readonly inviteQr = h('canvas', { class: 'invite-qr', width: 220, height: 220, 'aria-label': 'QR code of the invite link' });
+  private readonly celebration = h('div', { class: 'celebration', 'aria-live': 'assertive' });
   private readonly hostRow = h('div', { class: 'row host' });
   private addBotBtn!: HTMLButtonElement;
   private readonly myCards = h('div', { class: 'my-cards', 'aria-live': 'polite' });
@@ -93,7 +100,7 @@ export class Hud {
 
     // --- Top bar ---
     const code = net.session?.code ?? '';
-    const inviteBtn = (this.inviteBtn = h('button', { class: 'btn small gold invite', 'aria-label': 'Copy invite link', onclick: press(() => this.invite()) }, h('span', { class: 'long' }, 'Copy invite link'), h('span', { class: 'short' }, '🔗', h('span', { class: 'invite-word' }, ' Invite'))));
+    const inviteBtn = (this.inviteBtn = h('button', { class: 'btn small gold invite', 'aria-label': 'Invite friends', onclick: press(() => this.togglePanel('invite')) }, h('span', { class: 'long' }, 'Invite friends'), h('span', { class: 'short' }, '🔗', h('span', { class: 'invite-word' }, ' Invite'))));
     this.muteBtn = h('button', { class: 'icon-btn', title: 'Sound', 'aria-label': 'Sound settings', onclick: press(() => this.togglePanel('sound')) });
     this.gfxBtn = h('button', { class: 'icon-btn', title: 'Low graphics on/off', 'aria-label': 'Graphics quality', onclick: press(() => this.toggleGfx()) });
     const chatBtn = h(
@@ -155,9 +162,10 @@ export class Hud {
       this.actionsRow.append(btn);
     }
 
+    this.insuranceYes = h('button', { class: 'btn gold', onclick: press(() => send(net.insurance(true))) }, 'Take insurance');
     this.insuranceRow.append(
       this.insuranceText,
-      h('button', { class: 'btn gold', onclick: press(() => send(net.insurance(true))) }, 'Take insurance'),
+      this.insuranceYes,
       h('button', { class: 'btn ghost', onclick: press(() => send(net.insurance(false))) }, 'No thanks'),
     );
 
@@ -248,6 +256,8 @@ export class Hud {
       input.addEventListener('input', () => onInput(Number(input.value) / 100));
       return h('label', { class: 'slider-row', for: id }, h('span', {}, label), input);
     };
+    const voiceBox = h('input', { type: 'checkbox', id: 'dealer-voice', checked: opts.sound.voice });
+    voiceBox.addEventListener('change', () => opts.sound.setVoice(voiceBox.checked));
     const muteBox = h('input', { type: 'checkbox', id: 'mute-all', checked: opts.sound.muted });
     muteBox.addEventListener('change', () => {
       opts.sound.setMuted(muteBox.checked);
@@ -265,11 +275,64 @@ export class Hud {
           opts.sound.setSfx(v);
           opts.play?.('chip');
         }),
+        h('label', { class: 'check-row', for: 'dealer-voice' }, voiceBox, h('span', {}, 'Dealer speaks out loud')),
         h('label', { class: 'check-row', for: 'mute-all' }, muteBox, h('span', {}, 'Mute everything')),
       ),
     );
 
-    this.el = h('div', { class: 'hud' }, top, banner, controls, this.chatPanel, this.playersPanel, this.helpPanel, this.soundPanel, this.offline);
+    // Inviting friends: the exact link, the code, copy / share, and a QR code for phones.
+    const inviteUrl = `${location.origin}/table/${net.session?.code ?? ''}`;
+    const linkField = h('input', { class: 'field invite-link', id: 'invite-link', readonly: true, value: inviteUrl, 'aria-label': 'Invite link' });
+    linkField.addEventListener('focus', () => linkField.select());
+    const copy = async () => {
+      try {
+        await navigator.clipboard.writeText(inviteUrl);
+        toast('Link copied. Paste it in a message to your friends.');
+      } catch {
+        linkField.focus();
+        linkField.select();
+        toast('Press Ctrl+C (or ⌘C) to copy the selected link');
+      }
+    };
+    const share = async () => {
+      try {
+        await navigator.share({ title: 'Blackjack table', text: `Join my blackjack table (code ${net.session?.code ?? ''}):`, url: inviteUrl });
+      } catch (err) {
+        if ((err as Error).name !== 'AbortError') void copy();
+      }
+    };
+    this.invitePanel = h(
+      'aside',
+      { class: 'panel invite-panel', hidden: true },
+      h('div', { class: 'panel-head' }, h('h2', {}, 'Invite friends'), h('button', { class: 'icon-btn', 'aria-label': 'Close', onclick: () => this.togglePanel(null) }, '✕')),
+      h(
+        'div',
+        { class: 'invite-body' },
+        h('p', {}, 'Send this link. Friends open it, type a name and sit down: no account or app needed.'),
+        h('div', { class: 'invite-row' }, linkField, h('button', { class: 'btn gold small', onclick: press(copy) }, 'Copy')),
+        typeof navigator.share === 'function' ? h('button', { class: 'btn ghost', onclick: press(share) }, 'Share…') : null,
+        h('div', { class: 'invite-code' }, h('span', {}, 'Table code'), h('strong', {}, net.session?.code ?? '')),
+        h('div', { class: 'invite-qr-wrap' }, this.inviteQr, h('span', { class: 'muted' }, 'Friends next to you can scan this with their phone camera.')),
+      ),
+    );
+    void import('qrcode')
+      .then((QR) => QR.toCanvas(this.inviteQr, inviteUrl, { width: 220, margin: 1, color: { dark: '#14100c', light: '#f6f1e4' } }))
+      .catch(() => (this.inviteQr.hidden = true));
+
+    this.el = h(
+      'div',
+      { class: 'hud' },
+      top,
+      banner,
+      controls,
+      this.chatPanel,
+      this.playersPanel,
+      this.helpPanel,
+      this.soundPanel,
+      this.invitePanel,
+      this.celebration,
+      this.offline,
+    );
 
     // Keyboard shortcuts (ignored while typing in chat).
     window.addEventListener('keydown', this.onKey);
@@ -342,7 +405,14 @@ export class Hud {
 
     const insuranceDecision = state.phase === 'insurance' && me?.inRound && me.insurance === null;
     show(this.insuranceRow, Boolean(insuranceDecision));
-    if (insuranceDecision) this.insuranceText.textContent = `Dealer shows an ace. Insure for ${money(me!.hands[0]!.bet / 2)}?`;
+    if (insuranceDecision) {
+      // With a blackjack, insurance is "even money": you're paid 1 to 1 right away, whatever the dealer has.
+      const evenMoney = me!.hands[0]!.label === 'Blackjack';
+      this.insuranceText.textContent = evenMoney
+        ? `Blackjack against an ace. Take even money (a sure win of ${money(me!.hands[0]!.bet)})?`
+        : `Dealer shows an ace. Insure for ${money(me!.hands[0]!.bet / 2)}?`;
+      this.insuranceYes.textContent = evenMoney ? 'Even money' : 'Take insurance';
+    }
 
     const isHost = me?.isHost ?? false;
     const canStart = isHost && !state.solo && (state.phase === 'waiting' || (state.phase === 'betting' && state.players.some((p) => p.bet > 0)));
@@ -413,7 +483,9 @@ export class Hud {
     this.chatBadge.hidden = true;
   }
 
-  private togglePanel(which: 'chat' | 'players' | 'help' | 'sound' | null): void {
+  private togglePanel(which: 'chat' | 'players' | 'help' | 'sound' | 'invite' | null): void {
+    const openInvite = which === 'invite' && this.invitePanel.hidden;
+    this.invitePanel.hidden = !openInvite;
     const openChat = which === 'chat' && this.chatPanel.hidden;
     const openPlayers = which === 'players' && this.playersPanel.hidden;
     const openHelp = which === 'help' && this.helpPanel.hidden;
@@ -430,24 +502,34 @@ export class Hud {
     }
   }
 
-  private async invite(): Promise<void> {
-    const url = `${location.origin}/table/${this.net.session?.code ?? ''}`;
-    const data = { title: 'Blackjack table', text: 'Join my blackjack table!', url };
-    const touch = matchMedia('(pointer: coarse)').matches;
-    if (touch && navigator.share) {
-      try {
-        await navigator.share(data);
-        return;
-      } catch (err) {
-        if ((err as Error).name === 'AbortError') return;
-      }
+  /** A big moment: your 21 or blackjack gets a banner and confetti; others get a note. */
+  celebrate(kind: 'blackjack' | 'twentyone', mine: boolean, name: string): void {
+    if (!mine) {
+      toast(kind === 'blackjack' ? `${name} has blackjack!` : `${name} made 21`);
+      return;
     }
-    try {
-      await navigator.clipboard.writeText(url);
-      toast('Invite link copied: send it to your friends');
-    } catch {
-      prompt('Copy this link and send it to your friends:', url);
-    }
+    const big = kind === 'blackjack';
+    const confetti = big
+      ? Array.from({ length: 48 }, (_, i) =>
+          h('i', {
+            class: 'confetti',
+            style: {
+              left: `${Math.random() * 100}%`,
+              background: ['#f2c94c', '#e2574c', '#5bc0eb', '#9bc53d', '#ffffff', '#c77dff'][i % 6],
+              animationDelay: `${Math.random() * 0.4}s`,
+              animationDuration: `${1.8 + Math.random() * 1.2}s`,
+              transform: `rotate(${Math.random() * 360}deg)`,
+            },
+          }),
+        )
+      : [];
+    this.celebration.className = `celebration show ${big ? 'blackjack' : 'twentyone'}`;
+    this.celebration.replaceChildren(
+      ...confetti,
+      h('div', { class: 'celebration-text' }, big ? 'Blackjack!' : '21!', h('small', {}, big ? 'Pays 3 to 2' : 'Twenty-one')),
+    );
+    clearTimeout(this.celebrationTimer);
+    this.celebrationTimer = setTimeout(() => (this.celebration.className = 'celebration'), big ? 3200 : 2000);
   }
 
   /** Your hands as big, readable cards, plus the dealer's visible cards. */

@@ -13,7 +13,8 @@ import { OUTCOME_TEXT, money } from '../format.js';
 import type { TableRenderer } from '../renderer.js';
 import { Avatar } from './avatar.js';
 import { Dealer } from './dealer.js';
-import { type Environment, buildEnvironment } from './environment.js';
+import { Celebrations } from './effects.js';
+import { type Environment, buildEnvironment, buildLimitsSign } from './environment.js';
 import {
   CENTER,
   CHIP_H,
@@ -47,6 +48,8 @@ export interface Table3DOptions {
   onChipClick: (value: number) => void;
   /** Frame rate was too low and graphics were lowered automatically. */
   onAutoLow?: () => void;
+  /** A hand just reached 21 or a blackjack (for the on-screen celebration). */
+  onMoment?: (kind: 'blackjack' | 'twentyone', mine: boolean, name: string) => void;
 }
 
 /** Everything drawn for one player's seat. */
@@ -80,6 +83,10 @@ export class Table3D implements TableRenderer {
   private readonly seats = new Map<string, SeatView>();
   private readonly dealerCards: CardObject[] = [];
   private readonly dealerLabel = new LabelSprite(320, 80, 0.04);
+  private readonly dealerBubble = new LabelSprite(640, 96, 0.07);
+  private dealerBubbleUntil = 0;
+  private celebrations!: Celebrations;
+  private readonly celebrated = new Set<string>();
   private readonly turnRing: THREE.Mesh;
   private readonly betGlow: THREE.Mesh;
   private readonly resizeObserver: ResizeObserver;
@@ -108,6 +115,7 @@ export class Table3D implements TableRenderer {
   private readonly lookTargetV = new THREE.Vector3();
   private cameraPlaced = false;
   private lastDrag = -100;
+  private lastTurnKey = '';
   private turnGlance: string | null = null;
   private chatGlance: { playerId: string; until: number } | null = null;
   private clock = 0;
@@ -141,6 +149,11 @@ export class Table3D implements TableRenderer {
     this.scene.add(this.dealer.group, this.dealer.limbs);
 
     this.dealerLabel.position.set(0, TABLE_Y + 0.02, CENTER.z + 0.42);
+    this.dealerBubble.position.set(0, 1.74, DEALER_POS.z + 0.1);
+    this.dealerBubble.visible = false;
+    this.scene.add(this.dealerBubble);
+    this.celebrations = new Celebrations(this.scene);
+    this.scene.add(buildLimitsSign());
     this.scene.add(this.dealerLabel);
 
     this.turnRing = new THREE.Mesh(
@@ -212,6 +225,45 @@ export class Table3D implements TableRenderer {
     }
     this.reconcile(state, events.length > 0);
     this.reactToState(state, prev);
+    this.checkMoments(state);
+  }
+
+  /** Celebrate a hand that just reached 21 or a blackjack (once per hand). */
+  private checkMoments(state: PublicState): void {
+    for (const p of state.players) {
+      const view = this.seats.get(p.id);
+      if (!view) continue;
+      p.hands.forEach((hand, i) => {
+        const kind = hand.label === 'Blackjack' ? 'blackjack' : hand.label === '21' ? 'twentyone' : null;
+        const key = `${state.round}:${p.id}:${i}`;
+        if (!kind || this.celebrated.has(key)) return;
+        this.celebrated.add(key);
+        const mine = p.id === this.me;
+        const at = playerCardPos(view.angle, i, p.hands.length, Math.max(0, hand.cards.length - 1));
+        this.celebrations.burst(at, kind === 'blackjack', this.low || !mine);
+        if (kind === 'blackjack') {
+          this.dealerSays('Blackjack!', mine);
+          if (!mine) this.opts.sound.play('applause', { pan: this.panFor(at), gain: 0.6 });
+        }
+        if (mine) this.opts.sound.play(kind, { pan: this.panFor(at) });
+        this.opts.onMoment?.(kind, mine, p.name);
+      });
+    }
+    if (this.celebrated.size > 200) this.celebrated.clear();
+  }
+
+  /** Stereo position (−1 left … 1 right) of a point, as heard from your seat. */
+  private panFor(pos: THREE.Vector3): number {
+    const v = pos.clone().applyMatrix4(this.camera.matrixWorldInverse);
+    return THREE.MathUtils.clamp((v.x / Math.max(0.3, -v.z)) * 0.8, -0.9, 0.9);
+  }
+
+  /** The dealer's callout: a speech bubble, and the voice for the important ones. */
+  private dealerSays(text: string, voice = true): void {
+    this.dealerBubble.set({ text, bg: 'rgba(250, 246, 236, 0.95)', color: '#1d1a16' });
+    this.dealerBubble.visible = true;
+    this.dealerBubbleUntil = this.clock + 3.2;
+    if (voice) this.opts.sound.speak(text);
   }
 
   private viewOf(playerId: string): SeatView | undefined {
@@ -222,11 +274,30 @@ export class Table3D implements TableRenderer {
     const sound = this.opts.sound;
     switch (event.type) {
       case 'shuffle':
-        sound.play('shuffle', 0.2);
+        this.dealerSays('Shuffling up.');
+        sound.play('shuffle', { delay: 0.2 });
         await this.dealer.shuffle();
         this.env.setDiscardHeight(0);
         this.env.setShoeFill(1);
         break;
+
+      case 'burn': {
+        // The first card after a shuffle goes face down into the discard tray.
+        const obj = new CardObject(null);
+        await this.dealCard(obj, DISCARD_POS.clone().setY(TABLE_Y + 0.03), 0, false);
+        await this.anim.wait(0.1);
+        obj.mesh.removeFromParent();
+        break;
+      }
+
+      case 'act': {
+        const view = this.viewOf(event.playerId);
+        const at = view ? handAnchor(view.angle, event.handIndex, Math.max(1, (view.hands.length || 1))) : null;
+        view?.avatar?.signal(event.action);
+        if (event.action === 'hit' && at) sound.play('tap', { pan: this.panFor(at), delay: view?.avatar ? 0.12 : 0, gain: view?.avatar ? 0.7 : 1 });
+        if (view?.avatar) await this.anim.wait(event.action === 'stand' ? 0.35 : 0.5);
+        break;
+      }
 
       case 'deal': {
         if (event.to === 'dealer') {
@@ -271,7 +342,7 @@ export class Table3D implements TableRenderer {
         const base = hole.mesh.position.clone();
         this.dealer.lookAt(base);
         await this.dealer.reach('right', base.clone().add(new THREE.Vector3(0, 0.03, 0.03)), 0.22);
-        sound.play('flip');
+        sound.play('flip', { pan: this.panFor(base) });
         await this.anim.tween(
           0.32,
           (k) => {
@@ -301,7 +372,7 @@ export class Table3D implements TableRenderer {
 
       case 'double':
         this.pendingDouble = { playerId: event.playerId, handIndex: event.handIndex };
-        sound.play('chips');
+        sound.play('chips', { pan: this.panFor(betPos(this.viewOf(event.playerId)?.angle ?? 0, 0, 1)) });
         break;
 
       case 'bet': {
@@ -345,7 +416,7 @@ export class Table3D implements TableRenderer {
     this.scene.add(mesh);
     await this.dealer.reach('left', SHOE_MOUTH.clone().add(new THREE.Vector3(0, 0.03, 0.02)), 0.12);
     mesh.visible = true;
-    this.opts.sound.play('card');
+    this.opts.sound.play('card', { pan: this.panFor(target) });
     this.dealer.lookAt(target);
     const from = SHOE_MOUTH.clone();
     const handOffset = new THREE.Vector3(0, 0.025, -0.02);
@@ -388,7 +459,7 @@ export class Table3D implements TableRenderer {
       },
       ease.inOutSine,
     );
-    if (click) this.opts.sound.play('chip');
+    if (click) this.opts.sound.play('chip', { pan: this.panFor(to) });
     chip.removeFromParent();
   }
 
@@ -416,7 +487,7 @@ export class Table3D implements TableRenderer {
           this.dealer.lookAt(bet);
           void this.dealer.reach('right', bet.clone().setY(TABLE_Y + 0.04), 0.2);
           if (stack) stack.group.visible = false;
-          sound.play('chips');
+          sound.play('chipSlide', { pan: this.panFor(bet) });
           await Promise.all(breakdown(hand.bet).slice(0, 6).map((v, j) => this.flyChip(v, bet.clone().setY(TABLE_Y + j * CHIP_H), rackTop, 0.35)));
           if (stack) stack.amount = -1;
         } else if (hand.outcome === 'win' || hand.outcome === 'blackjack') {
@@ -425,7 +496,7 @@ export class Table3D implements TableRenderer {
           const to = winPos(seat.angle, i, n);
           this.dealer.lookAt(to);
           void this.dealer.reach('right', to.clone().setY(TABLE_Y + 0.05), 0.22);
-          sound.play('chips');
+          sound.play('chips', { pan: this.panFor(to) });
           await Promise.all(
             breakdown(win)
               .slice(0, 8)
@@ -725,16 +796,56 @@ export class Table3D implements TableRenderer {
     }
   }
 
-  /** Dealer looks at whoever is acting; you glance at them too; a ping when it becomes your turn. */
+  /**
+   * The dealer runs the table like a real one: callouts at each stage, a gesture toward
+   * whoever is to act. You glance at them too, and hear a ping when it's your turn.
+   */
   private reactToState(state: PublicState, prev: PublicState | null): void {
     const turn = state.turn;
+    const phaseChanged = prev?.phase !== state.phase;
+    const mine = state.players.find((p) => p.id === this.me);
+    if (phaseChanged) {
+      if (state.phase === 'betting') {
+        this.dealerSays(state.shoe.cutCardReached ? 'Last hand before the shuffle. Place your bets.' : 'Place your bets, please.');
+      } else if (state.phase === 'dealing' && prev) {
+        this.dealerSays('No more bets.');
+      } else if (state.phase === 'insurance') {
+        const evenMoney = mine?.hands[0]?.label === 'Blackjack';
+        this.dealerSays(evenMoney ? 'Even money?' : 'Insurance, anyone?');
+      } else if (state.phase === 'results' && state.dealer.revealed) {
+        const d = state.dealer.label;
+        this.dealerSays(d === 'Blackjack' ? 'Dealer has blackjack.' : d.startsWith('Bust') ? 'Dealer busts!' : `Dealer has ${d.replace('soft ', '')}.`);
+      }
+    }
     if (turn) {
       const view = this.seats.get(turn.playerId);
-      if (view) this.dealer.lookAt(onArc(view.angle, 1.4, 1.1));
+      const turnKey = `${turn.playerId}:${turn.handIndex}`;
+      if (view && turnKey !== this.lastTurnKey) {
+        this.lastTurnKey = turnKey;
+        this.dealer.lookAt(onArc(view.angle, 1.4, 1.1));
+        // An open-palm gesture toward the player's cards.
+        const player = state.players.find((p) => p.id === turn.playerId);
+        const anchor = handAnchor(view.angle, turn.handIndex, player?.hands.length ?? 1).setY(TABLE_Y + 0.06);
+        const side = anchor.x > 0 ? 'left' : 'right';
+        void this.dealer.reach(side, anchor.lerp(new THREE.Vector3(0, TABLE_Y + 0.06, CENTER.z + 0.25), 0.35), 0.35).then(() =>
+          this.anim.wait(0.5).then(() => this.dealer.rest(side, 0.4)),
+        );
+        if (turn.playerId !== this.me && player && Math.random() < 0.5) this.dealerSays(`${player.name}?`, false);
+      }
       const wasMine = prev?.turn?.playerId === this.me;
       if (turn.playerId === this.me && !wasMine) this.opts.sound.play('turn');
-    } else if (state.phase === 'betting') {
-      this.dealer.lookAt(new THREE.Vector3(0, 1.1, 1.2));
+    } else {
+      this.lastTurnKey = '';
+      if (state.phase === 'betting') this.dealer.lookAt(new THREE.Vector3(0, 1.1, 1.2));
+    }
+    // A player who just busted: "Too many."
+    if (prev && state.phase === 'playing') {
+      for (const p of state.players) {
+        const before = prev.players.find((q) => q.id === p.id);
+        p.hands.forEach((h, i) => {
+          if (h.label.startsWith('Bust') && !before?.hands[i]?.label.startsWith('Bust')) this.dealerSays('Too many.', p.id === this.me);
+        });
+      }
     }
     this.turnGlance = turn && turn.playerId !== this.me && state.phase === 'playing' ? turn.playerId : null;
   }
@@ -828,6 +939,8 @@ export class Table3D implements TableRenderer {
     this.anim.timeScale = Math.min(8, base + Math.max(0, this.pending - 1) * 1.5);
     this.anim.tick(dt);
     this.dealer.update(dt);
+    this.celebrations.update(dt);
+    if (this.dealerBubble.visible && this.clock > this.dealerBubbleUntil) this.dealerBubble.visible = false;
     for (const v of this.seats.values()) v.avatar?.update(dt);
     if (this.turnRing.visible) (this.turnRing.material as THREE.MeshBasicMaterial).opacity = 0.55 + Math.sin(this.clock * 5) * 0.3;
     if (this.betGlow.visible) (this.betGlow.material as THREE.MeshBasicMaterial).opacity = 0.35 + Math.sin(this.clock * 3) * 0.25;

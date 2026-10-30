@@ -3,7 +3,7 @@
 
 import * as THREE from 'three';
 import type { Look } from '../../shared/protocol.js';
-import { Blinker, type SeatedBody, buildSeatedBody } from './human.js';
+import { Blinker, type Gesture, type SeatedBody, buildSeatedBody, gestureOffset } from './human.js';
 import { R_AVATAR, TABLE_Y, onArc } from './layout.js';
 import { LabelSprite } from './textures.js';
 import { damp } from './tween.js';
@@ -20,6 +20,7 @@ export class Avatar {
   private lean = 0;
   private bubbleUntil = 0;
   private clock = 0;
+  private gesture: { kind: Gesture; start: number } | null = null;
 
   constructor(angle: number, look: Look) {
     this.setLook(look);
@@ -67,6 +68,11 @@ export class Avatar {
     this.bubbleUntil = this.clock + 5;
   }
 
+  /** A casino hand signal: tap the felt to hit, wave to stand, push chips to double or split. */
+  signal(kind: Gesture): void {
+    this.gesture = { kind, start: this.clock };
+  }
+
   /** Where to look to see this player's face. */
   faceWorld(): THREE.Vector3 {
     return this.body.head.group.getWorldPosition(new THREE.Vector3());
@@ -80,7 +86,17 @@ export class Avatar {
     this.body.torso.rotation.z = Math.sin(this.phase * 0.37) * 0.012;
     this.body.torso.position.y = 0.62 + Math.sin(this.phase * 1.3) * 0.003;
     this.body.head.group.rotation.y = Math.sin(this.phase * 0.23) * 0.25;
-    this.blinker.update(dt, this.body.head.eyes);
+    this.body.head.group.rotation.x = 0.12 + Math.sin(this.phase * 0.31) * 0.04; // eyes on the cards
+    this.blinker.update(dt, this.body.head.lids);
+    // Hands: resting on the rail, or making a signal.
+    for (const side of ['left', 'right'] as const) {
+      const arm = this.body.arms[side];
+      const offset = this.gesture ? gestureOffset(this.gesture.kind, this.clock - this.gesture.start, side) : null;
+      const goal = this.body.rest[side].clone().add(offset ?? new THREE.Vector3());
+      arm.target.lerp(goal, 1 - Math.exp(-14 * dt));
+      arm.solve();
+    }
+    if (this.gesture && !gestureOffset(this.gesture.kind, this.clock - this.gesture.start, 'right')) this.gesture = null;
     if (this.bubble.visible && this.clock > this.bubbleUntil) this.bubble.visible = false;
   }
 

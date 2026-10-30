@@ -70,6 +70,13 @@ export const prefs = {
   set sfxVolume(v: number) {
     store.local.set('bj:sfx', String(v));
   },
+  /** The dealer speaks out loud. On unless turned off. */
+  get dealerVoice(): boolean {
+    return store.local.get('bj:voice') !== '0';
+  },
+  set dealerVoice(v: boolean) {
+    store.local.set('bj:voice', v ? '1' : '0');
+  },
   get name(): string {
     return store.local.get('bj:name') ?? '';
   },

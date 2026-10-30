@@ -12,7 +12,11 @@ link to friends: they type a name and sit down. No accounts, no installs, play m
 - **Your own character**: pick skin, hair style and colour, outfit and accessories; the
   dealer and everyone at the table are people, with speech bubbles when they chat
 - **Always-readable cards**: your hands and the dealer's cards also appear as big cards in a corner panel
-- **Music and sound**: a generated lounge-jazz trio and casino sound effects, with separate volumes
+- **Music and sound**: a generated lounge-jazz trio, casino effects synthesized from physical models
+  (paper on felt, clay chips, a real riffle shuffle, crowd), stereo by seat, and a dealer who speaks
+- **Big moments**: hitting 21 or a blackjack sets off sparkles, confetti and applause
+- **Real casino habits**: burn card after the shuffle, the dealer's callouts and hand gestures,
+  players' hand signals (tap to hit, wave to stand), even money, a table limits sign
 - **Works on phones**, with a low-graphics mode and a 2D fallback for devices without 3D
 
 ## Table rules
@@ -73,6 +77,21 @@ link within 60 s, kick a player from the 👥 menu, chat with 💬, fill all 5 s
 join a 6th time (you watch as a spectator), toggle sound 🔊 and graphics ●/◐.
 
 ---
+
+## Play with friends who don't have any account
+
+The claude.ai preview needs a Claude account to open. To send friends a link that works
+for anyone (no sign-up, no app, no Claude account), put the game online once:
+
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/Kenzo-code333/Blackjack)
+
+1. Make sure this code is on the `main` branch (merge the pull request on GitHub).
+2. Click the button above, sign in to Render with GitHub (free), and press **Deploy Blueprint**.
+3. After 3–5 minutes you get an address like `https://blackjack-xxxx.onrender.com`.
+4. Open it, **Create table**, then press **Invite friends**: copy the link, share it, or let
+   friends scan the QR code. They open it, type a name, and sit down.
+
+The detailed version of these steps is below.
 
 ## Put it online (Render, free)
 

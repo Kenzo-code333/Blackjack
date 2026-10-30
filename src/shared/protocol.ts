@@ -106,6 +106,10 @@ export interface PublicState {
 /** One-off things that happened, so the 3D view can animate them in order. */
 export type TableEvent =
   | { type: 'shuffle' }
+  /** After a shuffle the dealer burns (discards face down) the top card. */
+  | { type: 'burn' }
+  /** A player made a move: the table shows their hand signal (tap = hit, wave = stand…). */
+  | { type: 'act'; playerId: string; handIndex: number; action: Action }
   | { type: 'deal'; to: 'dealer' | string; handIndex: number; card: Card | null }
   | { type: 'reveal'; card: Card }
   | { type: 'peek'; blackjack: boolean }

@@ -369,6 +369,9 @@ describe('shoe', () => {
     await tick(1500);
     expect(table.phase).toBe('betting');
     expect(events).toContainEqual({ type: 'shuffle' });
+    // The first card after the shuffle is burned.
+    expect(events).toContainEqual({ type: 'burn' });
+    expect(shoe.remaining).toBe(shoe.size - 1);
     expect(shoe.cutCardReached).toBe(false);
   });
 

@@ -348,6 +348,9 @@ export class Table {
     if (this.shoe.cutCardReached) {
       this.shoe.shuffle();
       this.emit({ type: 'shuffle' });
+      // Like a real dealer: burn the first card after the shuffle.
+      this.shoe.draw();
+      this.emit({ type: 'burn' });
     }
     this.phase = 'betting';
     this.round++;
@@ -508,6 +511,7 @@ export class Table {
     const hand = p.hands[index]!;
     const ctx = { hand, handCount: p.hands.length, balance: p.balance, rules: this.rules };
     if (!legalActions(ctx).includes(action)) return `You can't ${action} now`;
+    this.emit({ type: 'act', playerId, handIndex: index, action });
 
     switch (action) {
       case 'hit': {

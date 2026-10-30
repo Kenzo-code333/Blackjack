@@ -22,7 +22,7 @@ const PREVIEW = preview !== null;
 const net = new Net(globals.__bjLocalSocket);
 // The preview can't change the page address, so it keeps the current "path" in memory.
 let currentPath = PREVIEW ? '/' : location.pathname;
-const sound = new Sound({ muted: prefs.muted, music: prefs.musicVolume, sfx: prefs.sfxVolume });
+const sound = new Sound({ muted: prefs.muted, music: prefs.musicVolume, sfx: prefs.sfxVolume, voice: prefs.dealerVoice });
 
 // Browsers only allow sound after the first tap or click.
 window.addEventListener('pointerdown', () => sound.unlock(), { capture: true });
@@ -204,6 +204,13 @@ function showTable(): void {
       get sfx() {
         return prefs.sfxVolume;
       },
+      get voice() {
+        return prefs.dealerVoice;
+      },
+      setVoice: (on) => {
+        prefs.dealerVoice = on;
+        sound.setVoice(on);
+      },
       setMuted: (m) => {
         prefs.muted = m;
         sound.muted = m;
@@ -245,6 +252,7 @@ function showTable(): void {
         sound,
         low,
         onChipClick: bet,
+        onMoment: (kind, mine, name) => hud.celebrate(kind, mine, name),
         onAutoLow: () => {
           low = true;
           hud.setLowGraphics(true);

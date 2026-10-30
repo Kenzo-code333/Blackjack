@@ -285,3 +285,52 @@ export function buildEnvironment(): Environment {
   env.setDiscardHeight(0);
   return env;
 }
+
+/** The table limits placard, standing on the felt by the discard tray. */
+export function buildLimitsSign(): THREE.Group {
+  const c = document.createElement('canvas');
+  c.width = 256;
+  c.height = 160;
+  const ctx = c.getContext('2d')!;
+  const g = ctx.createLinearGradient(0, 0, 0, 160);
+  g.addColorStop(0, '#1b1410');
+  g.addColorStop(1, '#0d0a08');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, 256, 160);
+  ctx.strokeStyle = '#c9a54a';
+  ctx.lineWidth = 6;
+  ctx.strokeRect(6, 6, 244, 148);
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#e3bc5f';
+  ctx.font = '700 26px "Playfair Display", Georgia, serif';
+  ctx.fillText('BLACKJACK', 128, 48);
+  ctx.fillStyle = '#f3eedf';
+  ctx.font = '600 22px Inter, system-ui, sans-serif';
+  ctx.fillText('MIN 5 · MAX 500', 128, 92);
+  ctx.font = '500 16px Inter, system-ui, sans-serif';
+  ctx.fillStyle = 'rgba(243, 238, 223, 0.7)';
+  ctx.fillText('6 decks · S17 · 3:2', 128, 126);
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  const sign = new THREE.Group();
+  const face = new THREE.Mesh(
+    new THREE.BoxGeometry(0.12, 0.075, 0.006),
+    [
+      new THREE.MeshStandardMaterial({ color: 0xc9a54a, metalness: 0.7, roughness: 0.3 }),
+      new THREE.MeshStandardMaterial({ color: 0xc9a54a, metalness: 0.7, roughness: 0.3 }),
+      new THREE.MeshStandardMaterial({ color: 0xc9a54a, metalness: 0.7, roughness: 0.3 }),
+      new THREE.MeshStandardMaterial({ color: 0xc9a54a, metalness: 0.7, roughness: 0.3 }),
+      new THREE.MeshStandardMaterial({ map: tex, roughness: 0.5 }),
+      new THREE.MeshStandardMaterial({ color: 0x15100c }),
+    ],
+  );
+  face.position.y = 0.05;
+  face.rotation.x = -0.25;
+  face.castShadow = true;
+  const foot = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.008, 0.04), new THREE.MeshStandardMaterial({ color: 0xc9a54a, metalness: 0.7, roughness: 0.3 }));
+  foot.position.y = 0.004;
+  sign.add(face, foot);
+  sign.position.set(-0.5, TABLE_Y, -0.36);
+  sign.rotation.y = 0.35;
+  return sign;
+}

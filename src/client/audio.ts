@@ -6,7 +6,31 @@
 //
 // Browsers only allow audio after the user interacts, so `unlock()` runs on the first tap.
 
-export type SoundName = 'card' | 'flip' | 'chip' | 'chips' | 'shuffle' | 'click' | 'turn' | 'win' | 'lose' | 'blackjack';
+import { type SfxBank, buildSfxBank } from './sfx.js';
+
+export type SoundName =
+  | 'card'
+  | 'flip'
+  | 'chip'
+  | 'chips'
+  | 'chipSlide'
+  | 'tap'
+  | 'shuffle'
+  | 'click'
+  | 'turn'
+  | 'win'
+  | 'lose'
+  | 'twentyone'
+  | 'blackjack'
+  | 'applause';
+
+export interface PlayOptions {
+  /** Seconds from now. */
+  delay?: number;
+  /** −1 (left) … 1 (right). */
+  pan?: number;
+  gain?: number;
+}
 
 const midi = (n: number) => 440 * 2 ** ((n - 69) / 12);
 
@@ -29,6 +53,8 @@ export interface SoundSettings {
   muted: boolean;
   music: number; // 0–1
   sfx: number; // 0–1
+  /** The dealer speaks (browser speech synthesis). */
+  voice: boolean;
 }
 
 export class Sound {
@@ -39,6 +65,8 @@ export class Sound {
   private ambientBus!: GainNode;
   private reverbSend!: GainNode;
   private noise!: AudioBuffer;
+  private bank: SfxBank | null = null;
+  private voiceChoice: SpeechSynthesisVoice | null | undefined;
   private settings: SoundSettings;
   private musicTimer: ReturnType<typeof setInterval> | undefined;
   private ambientTimer: ReturnType<typeof setTimeout> | undefined;
@@ -66,6 +94,32 @@ export class Sound {
   setSfxVolume(v: number): void {
     this.settings.sfx = v;
     this.applyLevels();
+  }
+
+  setVoice(on: boolean): void {
+    this.settings.voice = on;
+    if (!on) globalThis.speechSynthesis?.cancel();
+  }
+
+  /** The dealer says something out loud (if the voice is on). */
+  speak(text: string): void {
+    const synth = globalThis.speechSynthesis;
+    if (!synth || !this.settings.voice || this.settings.muted || this.settings.sfx <= 0 || !this.ctx) return;
+    if (this.voiceChoice === undefined) {
+      const voices = synth.getVoices();
+      if (voices.length) {
+        const prefer = ['Daniel', 'Google UK English Male', 'Alex', 'Samantha', 'Google US English', 'Microsoft Guy', 'Microsoft Aria'];
+        this.voiceChoice =
+          prefer.map((n) => voices.find((v) => v.name.includes(n))).find(Boolean) ?? voices.find((v) => v.lang.startsWith('en')) ?? null;
+      }
+    }
+    const u = new SpeechSynthesisUtterance(text);
+    if (this.voiceChoice) u.voice = this.voiceChoice;
+    u.rate = 1.02;
+    u.pitch = 0.95;
+    u.volume = Math.min(1, this.settings.sfx * 0.9);
+    synth.cancel();
+    synth.speak(u);
   }
 
   private applyLevels(): void {
@@ -121,6 +175,12 @@ export class Sound {
     this.musicBus = bus(0.3);
     this.ambientBus = bus(0.2);
 
+    try {
+      this.bank = buildSfxBank(ctx);
+    } catch (err) {
+      console.warn('Could not build sound effects', err);
+    }
+
     const len = ctx.sampleRate * 2;
     this.noise = ctx.createBuffer(1, len, ctx.sampleRate);
     const data = this.noise.getChannelData(0);
@@ -156,65 +216,80 @@ export class Sound {
 
   // ---------- Effects ----------
 
-  play(name: SoundName, delay = 0): void {
+  play(name: SoundName, opts: PlayOptions | number = {}): void {
     if (!this.live || this.settings.sfx <= 0) return;
-    const t = this.ctx!.currentTime + delay + 0.005;
+    const o = typeof opts === 'number' ? { delay: opts } : opts;
+    const t = this.ctx!.currentTime + (o.delay ?? 0) + 0.005;
     const out = this.sfxBus;
+    const bank = this.bank;
+    const sample = (list: AudioBuffer[] | AudioBuffer | undefined, gain = 1, rate = 1) => {
+      if (!list) return;
+      const buf = Array.isArray(list) ? list[Math.floor(Math.random() * list.length)]! : list;
+      this.sample(buf, t, { gain: gain * (o.gain ?? 1), pan: o.pan ?? 0, rate: rate * (0.96 + Math.random() * 0.08) });
+    };
     switch (name) {
       case 'card':
-        // A card sliding on felt: a soft filtered swish that darkens, then a gentle landing tap.
-        this.noiseHit(out, t, { type: 'bandpass', from: 2400, to: 1100, q: 0.7, attack: 0.008, decay: 0.15, gain: 0.32 });
-        this.noiseHit(out, t + 0.12, { type: 'lowpass', from: 900, to: 500, q: 0.5, attack: 0.002, decay: 0.035, gain: 0.16 });
+        sample(bank?.card, 0.9);
         break;
       case 'flip':
-        this.noiseHit(out, t, { type: 'highpass', from: 3000, to: 2200, q: 0.8, attack: 0.001, decay: 0.035, gain: 0.22 });
-        this.tone(out, t + 0.005, 190, 0.05, 0.08, 'sine', 120);
+        sample(bank?.flip, 0.9);
         break;
       case 'chip':
-        this.chipClack(t, 1);
+        sample(bank?.chipDrop, 0.8);
         break;
       case 'chips':
-        for (let i = 0; i < 4; i++) this.chipClack(t + i * (0.035 + Math.random() * 0.02), 0.85 - i * 0.12);
+        sample(bank?.chipDrop, 0.8);
+        this.sample(bank!.chipDrop[0]!, t + 0.06, { gain: 0.55, pan: o.pan ?? 0, rate: 1.04 });
         break;
-      case 'shuffle': {
-        // Riffle: quick clicks that speed up and swell, then the bridge, then the deck squared.
-        const n = 42;
-        for (let i = 0; i < n; i++) {
-          const k = i / n;
-          const at = t + 0.85 * Math.sqrt(k);
-          this.noiseHit(out, at, {
-            type: 'bandpass',
-            from: 3500 + Math.random() * 1500,
-            to: 3000,
-            q: 2.2,
-            attack: 0.001,
-            decay: 0.014,
-            gain: 0.1 + 0.12 * Math.sin(Math.PI * k),
-          });
-        }
-        this.noiseHit(out, t + 0.95, { type: 'bandpass', from: 900, to: 3200, q: 0.8, attack: 0.08, decay: 0.3, gain: 0.14 });
-        this.noiseHit(out, t + 1.35, { type: 'lowpass', from: 700, to: 300, q: 0.6, attack: 0.003, decay: 0.08, gain: 0.3 });
+      case 'chipSlide':
+        sample(bank?.chipSlide, 0.8);
         break;
-      }
+      case 'tap':
+        sample(bank?.tap, 0.9);
+        break;
+      case 'shuffle':
+        sample(bank?.shuffle, 0.9, 1);
+        break;
       case 'click':
-        this.tone(out, t, 1600, 0.03, 0.045, 'sine', 900);
+        this.tone(out, t, 1600, 0.03, 0.035, 'sine', 900);
         break;
       case 'turn':
-        this.bell(out, t, midi(76), 0.09);
-        this.bell(out, t + 0.12, midi(81), 0.08);
+        this.bell(out, t, midi(76), 0.07);
+        this.bell(out, t + 0.12, midi(81), 0.06);
         break;
       case 'win':
-        [72, 76, 79, 84].forEach((n, i) => this.bell(out, t + i * 0.085, midi(n), 0.07));
+        [72, 76, 79].forEach((n, i) => this.bell(out, t + i * 0.09, midi(n), 0.05));
+        sample(bank?.chipSlide, 0.6);
+        break;
+      case 'twentyone':
+        [72, 76, 79, 84].forEach((n, i) => this.bell(out, t + i * 0.08, midi(n), 0.06));
         break;
       case 'blackjack':
-        [72, 76, 79, 84, 88].forEach((n, i) => this.bell(out, t + i * 0.07, midi(n), 0.08));
-        this.noiseHit(out, t + 0.35, { type: 'highpass', from: 7000, to: 9000, q: 0.5, attack: 0.05, decay: 0.6, gain: 0.05 });
+        [72, 76, 79, 84, 88].forEach((n, i) => this.bell(out, t + i * 0.07, midi(n), 0.07, 1.4));
+        this.sample(bank!.ooh, t + 0.05, { gain: 0.5 });
+        this.sample(bank!.applause, t + 0.35, { gain: 0.55 });
+        break;
+      case 'applause':
+        sample(bank?.applause, 0.5);
         break;
       case 'lose':
-        this.bell(out, t, midi(64), 0.06);
-        this.bell(out, t + 0.16, midi(60), 0.05);
+        this.bell(out, t, midi(64), 0.04);
+        this.bell(out, t + 0.16, midi(60), 0.035);
         break;
     }
+  }
+
+  private sample(buf: AudioBuffer, t: number, o: { gain?: number; pan?: number; rate?: number }): void {
+    const ctx = this.ctx!;
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    src.playbackRate.value = o.rate ?? 1;
+    const g = ctx.createGain();
+    g.gain.value = o.gain ?? 1;
+    const p = ctx.createStereoPanner();
+    p.pan.value = Math.max(-1, Math.min(1, o.pan ?? 0));
+    src.connect(g).connect(p).connect(this.sfxBus);
+    src.start(t);
   }
 
   private noiseHit(
@@ -402,34 +477,42 @@ export class Sound {
 
   private startAmbience(): void {
     const ctx = this.ctx!;
-    const src = ctx.createBufferSource();
-    src.buffer = this.noise;
-    src.loop = true;
-    const low = ctx.createBiquadFilter();
-    low.type = 'lowpass';
-    low.frequency.value = 300;
-    const g = ctx.createGain();
-    g.gain.value = 0.035;
-    src.connect(low).connect(g).connect(this.ambientBus);
-    src.start();
-
-    const murmur = () => {
+    if (this.bank) {
+      // Recorded-style room tone: distant voices and air, looped.
+      const src = ctx.createBufferSource();
+      src.buffer = this.bank.room;
+      src.loop = true;
+      const g = ctx.createGain();
+      g.gain.value = 0.22;
+      src.connect(g).connect(this.ambientBus);
+      src.start();
+    }
+    // Now and then, life at other tables: chips stacking, a slot machine far away.
+    const life = () => {
       if (!this.ctx) return;
-      if (this.live) {
+      if (this.live && this.bank) {
         const t = this.ctx.currentTime;
+        const pan = Math.random() * 2 - 1;
         if (Math.random() < 0.6) {
-          // Distant voices: a slow swell of band-passed noise.
-          this.noiseHit(this.ambientBus, t, { type: 'bandpass', from: 450 + Math.random() * 300, to: 380, q: 2.5, attack: 0.6, decay: 1.6, gain: 0.03 });
+          this.sampleTo(this.ambientBus, this.bank.chipDrop[Math.floor(Math.random() * this.bank.chipDrop.length)]!, t, 0.12, pan);
         } else {
-          // Someone stacking chips at another table.
-          for (let i = 0; i < 3; i++) {
-            const at = t + i * 0.05;
-            this.tone(this.ambientBus, at, 2400 + Math.random() * 400, 0.04, 0.012, 'sine');
-          }
+          [84, 88, 91].forEach((n, i) => this.bell(this.ambientBus, t + i * 0.11, midi(n), 0.006, 0.6));
         }
       }
-      this.ambientTimer = setTimeout(murmur, 1800 + Math.random() * 3500);
+      this.ambientTimer = setTimeout(life, 2500 + Math.random() * 5000);
     };
-    murmur();
+    life();
+  }
+
+  private sampleTo(out: AudioNode, buf: AudioBuffer, t: number, gain: number, pan: number): void {
+    const ctx = this.ctx!;
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    const g = ctx.createGain();
+    g.gain.value = gain;
+    const p = ctx.createStereoPanner();
+    p.pan.value = pan;
+    src.connect(g).connect(p).connect(out);
+    src.start(t);
   }
 }
