@@ -45,6 +45,8 @@ function shell(...children: HTMLElement[]): HTMLElement {
 }
 
 export interface HomeActions {
+  /** Offline preview: only solo play, with a note explaining why. */
+  soloOnly?: boolean;
   solo: (name: string) => Promise<void>;
   create: (name: string) => Promise<void>;
   join: (code: string) => void;
@@ -86,14 +88,14 @@ export function homeScreen(actions: HomeActions): HTMLElement {
     code,
     h('button', { class: 'btn ghost', type: 'submit' }, 'Join with code'),
   );
+  const solo = h('button', { class: 'btn gold big', onclick: run(async () => { const n = readName(name); if (n) await actions.solo(n); }) }, 'Play solo');
+  const create = h('button', { class: 'btn gold big', onclick: run(async () => { const n = readName(name); if (n) await actions.create(n); }) }, 'Create table');
   return shell(
     h('label', { class: 'field-label', for: 'name' }, 'Display name'),
     name,
-    h('div', { class: 'menu' },
-      h('button', { class: 'btn gold big', onclick: run(async () => { const n = readName(name); if (n) await actions.solo(n); }) }, 'Play solo'),
-      h('button', { class: 'btn gold big', onclick: run(async () => { const n = readName(name); if (n) await actions.create(n); }) }, 'Create table'),
-      joinForm,
-    ),
+    actions.soloOnly
+      ? h('div', { class: 'menu' }, solo, h('p', { class: 'preview-note' }, 'This preview runs entirely in your browser, so it is solo only. Tables with friends need the deployed server.'))
+      : h('div', { class: 'menu' }, solo, create, joinForm),
   );
 }
 

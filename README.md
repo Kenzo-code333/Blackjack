@@ -49,6 +49,7 @@ page and reloads it when you change code (port 5173). You only ever open 5173.
 | `npm run play` | Plays blackjack in the terminal using the real rules module |
 | `npm run build` | Builds the browser code into `dist/client` |
 | `npm start` | Runs the production server (serves `dist/client` too) on port 3000 |
+| `npm run build:preview` | Builds an offline, solo-only version into `dist/preview` (the game engine runs in the page; used for the claude.ai preview) |
 
 ### Testing multiplayer locally
 

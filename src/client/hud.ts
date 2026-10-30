@@ -58,6 +58,7 @@ export class Hud {
   private readonly playersList = h('ul', { class: 'players-list' });
   private readonly helpPanel: HTMLElement;
   private readonly offline = h('div', { class: 'offline', hidden: true }, h('div', { class: 'spinner' }), 'Reconnecting…');
+  private inviteBtn!: HTMLButtonElement;
   private readonly muteBtn: HTMLButtonElement;
   private readonly gfxBtn: HTMLButtonElement;
 
@@ -77,7 +78,7 @@ export class Hud {
 
     // --- Top bar ---
     const code = net.session?.code ?? '';
-    const inviteBtn = h('button', { class: 'btn small gold invite', 'aria-label': 'Copy invite link', onclick: press(() => this.invite()) }, h('span', { class: 'long' }, 'Copy invite link'), h('span', { class: 'short' }, '🔗', h('span', { class: 'invite-word' }, ' Invite')));
+    const inviteBtn = (this.inviteBtn = h('button', { class: 'btn small gold invite', 'aria-label': 'Copy invite link', onclick: press(() => this.invite()) }, h('span', { class: 'long' }, 'Copy invite link'), h('span', { class: 'short' }, '🔗', h('span', { class: 'invite-word' }, ' Invite'))));
     this.muteBtn = h('button', { class: 'icon-btn', title: 'Sound on/off', 'aria-label': 'Sound', onclick: press(() => this.toggleMute()) });
     this.gfxBtn = h('button', { class: 'icon-btn', title: 'Low graphics on/off', 'aria-label': 'Graphics quality', onclick: press(() => this.toggleGfx()) });
     const chatBtn = h(
@@ -257,6 +258,8 @@ export class Hud {
     this.state = state;
 
     this.banner.textContent = bannerText(state, this.net.me);
+    // Solo tables are private, so there is nobody to invite.
+    this.inviteBtn.hidden = state.solo;
     this.balanceEl.textContent = me ? money(me.balance) : '–';
     const onTable = me && state.phase !== 'results' ? me.hands.reduce((s, x) => s + x.bet, 0) || me.bet : 0;
     this.betEl.textContent = money(onTable);

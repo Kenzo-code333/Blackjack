@@ -13,7 +13,12 @@ import { prefs, store } from './storage.js';
 import { Table2D } from './table2d.js';
 
 const app = document.getElementById('app')!;
-const net = new Net();
+// The offline preview build installs an in-page server before this file runs.
+const localSocket = (globalThis as { __bjLocalSocket?: ConstructorParameters<typeof Net>[0] }).__bjLocalSocket;
+const PREVIEW = Boolean(localSocket);
+const net = new Net(localSocket);
+// The preview can't change the page address, so it keeps the current "path" in memory.
+let currentPath = PREVIEW ? '/' : location.pathname;
 const sound = new Sound(prefs.muted);
 
 // Browsers only allow sound after the first tap or click.
@@ -38,14 +43,18 @@ function mount(el: HTMLElement): void {
 }
 
 function go(path: string): void {
-  if (location.pathname !== path) history.pushState(null, '', path);
+  if (!PREVIEW && location.pathname !== path) history.pushState(null, '', path);
+  currentPath = path;
   route();
 }
 
-window.addEventListener('popstate', () => route());
+window.addEventListener('popstate', () => {
+  currentPath = location.pathname;
+  route();
+});
 
 function tableCodeFromUrl(): string | null {
-  const m = location.pathname.match(/^\/table\/([A-Za-z0-9]{6})\/?$/);
+  const m = currentPath.match(/^\/table\/([A-Za-z0-9]{6})\/?$/);
   return m ? m[1]!.toUpperCase() : null;
 }
 
@@ -80,6 +89,7 @@ function showHome(): void {
   document.title = 'Blackjack';
   mount(
     homeScreen({
+      soloOnly: PREVIEW,
       solo: async (name) => {
         const res = await net.create(name, true);
         if (res.ok) go(`/table/${res.code}`);

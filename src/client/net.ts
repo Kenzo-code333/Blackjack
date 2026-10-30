@@ -57,8 +57,9 @@ export class Net {
   /** Rejoining after a reconnect failed (e.g. the seat expired). */
   onLost: (error: string) => void = () => {};
 
-  constructor() {
-    this.socket = io({ transports: ['websocket', 'polling'] });
+  /** `socket` can be swapped for an in-page fake (used by the offline preview build). */
+  constructor(socket?: Socket<ServerToClient, ClientToServer>) {
+    this.socket = socket ?? io({ transports: ['websocket', 'polling'] });
     this.socket.on('connect', () => {
       this.setStatus('online');
       // After a dropped connection, take our seat back automatically.
