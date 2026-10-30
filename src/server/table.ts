@@ -97,6 +97,7 @@ export class Table {
   round = 0;
   hostId: string | null = null;
   deadline: number | null = null;
+  timerMs: number | null = null;
   dealer: Card[] = [];
   dealerRevealed = false;
   turn: { playerId: string; handIndex: number } | null = null;
@@ -593,6 +594,7 @@ export class Table {
   private schedule(ms: number, fn: () => void): void {
     this.stopTimer();
     this.deadline = Date.now() + ms;
+    this.timerMs = ms;
     this.timer = setTimeout(() => {
       this.timer = null;
       fn();
@@ -637,6 +639,7 @@ export class Table {
       phase: this.phase,
       round: this.round,
       deadline: this.deadline,
+      timerMs: this.timerMs,
       serverTime: Date.now(),
       hostId: this.hostId,
       dealer: {

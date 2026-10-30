@@ -46,6 +46,8 @@ export interface PublicState {
   round: number;
   /** When the current countdown ends (server clock, ms). */
   deadline: number | null;
+  /** Full length of the current countdown (ms), for drawing a progress bar. */
+  timerMs: number | null;
   /** Server clock when this state was sent, to correct for clock differences. */
   serverTime: number;
   hostId: string | null;
