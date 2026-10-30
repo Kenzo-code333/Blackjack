@@ -196,6 +196,21 @@ describe('socket server', () => {
     expect(results).toEqual([true, true, true, true, false, false]);
   });
 
+  it('creates a table with bots, and the host can add more', async () => {
+    const ana = await client();
+    const created = await call<JoinResult>(ana, 'room:create', { name: 'Ana', bots: 2, look: { skin: 1, hair: 2, hairColor: 3, outfit: 4, extra: 0 } });
+    if (!created.ok) throw new Error('create failed');
+    const state = await ana.next((s) => s.players.length === 3);
+    expect(state.players.map((p) => p.bot)).toEqual([false, true, true]);
+    expect(state.players[0]!.look).toEqual({ skin: 1, hair: 2, hairColor: 3, outfit: 4, extra: 0 });
+    expect(state.phase).toBe('betting'); // bot tables start by themselves
+    expect((await call(ana, 'host:addBot')).ok).toBe(true);
+    await ana.next((s) => s.players.length === 4);
+    expect((await call(ana, 'player:look', { look: { skin: 5, hair: 0, hairColor: 0, outfit: 0, extra: 4 } })).ok).toBe(true);
+    const updated = await ana.next((s) => s.players[0]!.look.skin === 5);
+    expect(updated.players[0]!.look.extra).toBe(4);
+  });
+
   it('a 6th player becomes a spectator; unknown codes are rejected', async () => {
     const host = await client();
     const created = await call<JoinResult>(host, 'room:create', { name: 'P1' });

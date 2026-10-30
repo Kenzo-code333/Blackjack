@@ -29,10 +29,12 @@ import {
   newHand,
   settleHand,
   settleInsurance,
+  basicStrategy,
   split,
   stand,
 } from '../game/index.js';
-import { MAX_SEATS, type Phase, type PublicPlayer, type PublicState, type TableEvent } from '../shared/protocol.js';
+import { type Look, MAX_SEATS, type Phase, type PublicPlayer, type PublicState, type TableEvent, cleanLook } from '../shared/protocol.js';
+import { type BotPersonality, botBet, botLine, newBot, replyKind } from './bots.js';
 
 export interface TableTiming {
   /** Betting countdown. null = no countdown, wait for "Deal" (used for solo tables). */
@@ -45,6 +47,8 @@ export interface TableTiming {
   /** Time per card, so the server waits while clients animate the deal. */
   cardMs: number;
   revealMs: number;
+  /** Typical "thinking" time for computer players. */
+  botMs: number;
 }
 
 export const DEFAULT_TIMING: TableTiming = {
@@ -55,6 +59,7 @@ export const DEFAULT_TIMING: TableTiming = {
   resultsMs: 5_000,
   cardMs: 450,
   revealMs: 800,
+  botMs: 1100,
 };
 
 export interface Player {
@@ -73,6 +78,9 @@ export interface Player {
   ready: boolean;
   connected: boolean;
   joinedAt: number;
+  look: Look;
+  /** Set for computer players. */
+  bot: BotPersonality | null;
 }
 
 export interface TableOptions {
@@ -81,7 +89,11 @@ export interface TableOptions {
   rules?: Rules;
   timing?: Partial<TableTiming>;
   shoe?: Shoe;
+  /** Start betting as soon as someone sits down, and keep dealing (tables with bots). */
+  autoStart?: boolean;
   onUpdate?: (events: TableEvent[]) => void;
+  /** A computer player says something in the chat. */
+  onBotChat?: (playerId: string, text: string) => void;
 }
 
 const newId = (bytes: number) => randomBytes(bytes).toString('base64url');
@@ -89,6 +101,7 @@ const newId = (bytes: number) => randomBytes(bytes).toString('base64url');
 export class Table {
   readonly code: string;
   readonly solo: boolean;
+  readonly autoStart: boolean;
   readonly rules: Rules;
   readonly timing: TableTiming;
   readonly shoe: Shoe;
@@ -106,14 +119,18 @@ export class Table {
   private pendingEvents: TableEvent[] = [];
   private updateQueued = false;
   private readonly onUpdate: (events: TableEvent[]) => void;
+  private readonly onBotChat: (playerId: string, text: string) => void;
+  private readonly botTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
   constructor(options: TableOptions) {
     this.code = options.code;
     this.solo = options.solo ?? false;
+    this.autoStart = this.solo || (options.autoStart ?? false);
     this.rules = options.rules ?? DEFAULT_RULES;
     this.timing = { ...DEFAULT_TIMING, ...(this.solo ? { bettingMs: null } : {}), ...options.timing };
     this.shoe = options.shoe ?? new Shoe({ decks: this.rules.decks, penetration: this.rules.penetration });
     this.onUpdate = options.onUpdate ?? (() => {});
+    this.onBotChat = options.onBotChat ?? (() => {});
   }
 
   get maxSeats(): number {
@@ -122,7 +139,7 @@ export class Table {
 
   // ---------- Players ----------
 
-  addPlayer(name: string): Player {
+  addPlayer(name: string, look?: Look, bot: BotPersonality | null = null): Player {
     const player: Player = {
       id: newId(6),
       token: newId(18),
@@ -138,13 +155,43 @@ export class Table {
       ready: false,
       connected: true,
       joinedAt: Date.now(),
+      look: cleanLook(look),
+      bot,
     };
     this.players.set(player.id, player);
-    if (!this.hostId) this.hostId = player.id;
-    // Solo tables start betting straight away.
-    if (this.solo && this.phase === 'waiting') this.startBetting();
+    if (!this.hostId && !bot) this.hostId = player.id;
+    // Solo and bot tables start betting straight away.
+    if (this.autoStart && !bot && this.phase === 'waiting') this.startBetting();
     this.changed();
     return player;
+  }
+
+  /** Host action: seat a computer player. */
+  addBot(byId: string | null): string | null {
+    if (byId !== null && byId !== this.hostId) return 'Only the host can do that';
+    if (this.solo) return 'Solo tables have one seat';
+    if (this.freeSeat() === null) return 'Table is full';
+    const bot = newBot(new Set([...this.players.values()].map((p) => p.name)));
+    this.addPlayer(bot.name, bot.look, bot.personality);
+    return null;
+  }
+
+  setLook(playerId: string, look: Look): string | null {
+    const p = this.players.get(playerId);
+    if (!p) return 'Not at this table';
+    p.look = cleanLook(look);
+    this.changed();
+    return null;
+  }
+
+  /** A human said something: maybe a bot answers. */
+  chatHeard(playerId: string, text: string): void {
+    const speaker = this.players.get(playerId);
+    const kind = replyKind(text);
+    const bots = this.seated.filter((p) => p.bot);
+    if (!speaker || speaker.bot || !kind || !bots.length || Math.random() > 0.75) return;
+    const bot = bots[Math.floor(Math.random() * bots.length)]!;
+    this.botSay(bot, botLine(kind, speaker.name), 900 + Math.random() * 1200);
   }
 
   findByToken(token: string): Player | undefined {
@@ -161,8 +208,9 @@ export class Table {
     return this.seated.filter((p) => p.inRound);
   }
 
+  /** Connected people (bots don't count). */
   get connectedCount(): number {
-    return [...this.players.values()].filter((p) => p.connected).length;
+    return [...this.players.values()].filter((p) => p.connected && !p.bot).length;
   }
 
   private freeSeat(): number | null {
@@ -213,11 +261,13 @@ export class Table {
 
   private pickNewHost(): void {
     const candidates = [...this.players.values()]
-      .filter((p) => p.connected && p.id !== this.hostId)
+      .filter((p) => p.connected && !p.bot && p.id !== this.hostId)
       .sort((a, b) => (a.seat ?? 99) - (b.seat ?? 99) || a.joinedAt - b.joinedAt);
     // Keep the current host if nobody else is connected (they may come back).
     if (candidates[0]) this.hostId = candidates[0].id;
-    else if (!this.hostId || !this.players.has(this.hostId)) this.hostId = [...this.players.keys()][0] ?? null;
+    else if (!this.hostId || !this.players.has(this.hostId)) {
+      this.hostId = [...this.players.values()].find((p) => !p.bot)?.id ?? null;
+    }
   }
 
   kick(byId: string, targetId: string): string | null {
@@ -337,8 +387,8 @@ export class Table {
       p.inRound = p.bet > 0;
     }
     if (this.participants.length === 0) {
-      // Nobody bet. Solo tables keep waiting for a bet; others go idle until the host restarts.
-      if (this.solo) this.startBetting();
+      // Nobody bet. Solo and bot tables keep waiting for a bet; others go idle until the host restarts.
+      if (this.autoStart) this.startBetting();
       else this.goIdle();
       return;
     }
@@ -573,6 +623,7 @@ export class Table {
     this.phase = 'results';
     this.turn = null;
     this.emit({ type: 'settle' });
+    this.botReactions();
     this.schedule(this.timing.resultsMs, () => this.endRound());
     this.changed();
   }
@@ -585,7 +636,8 @@ export class Table {
       p.inRound = false;
     }
     this.dealer = [];
-    if (this.seated.some((p) => p.connected)) this.startBetting();
+    // Keep dealing while at least one person (not just bots) is at the table.
+    if (this.seated.some((p) => p.connected && !p.bot)) this.startBetting();
     else this.goIdle();
   }
 
@@ -609,6 +661,89 @@ export class Table {
   /** Stop all timers (used when the room closes). */
   dispose(): void {
     this.stopTimer();
+    for (const t of this.botTimers.values()) clearTimeout(t);
+    this.botTimers.clear();
+  }
+
+  // ---------- Computer players ----------
+
+  /** Runs one action later, once per key (so repeated updates don't double up). */
+  private botLater(key: string, ms: number, fn: () => void): void {
+    if (this.botTimers.has(key)) return;
+    this.botTimers.set(
+      key,
+      setTimeout(() => {
+        this.botTimers.delete(key);
+        fn();
+      }, ms),
+    );
+  }
+
+  private thinkMs(): number {
+    return this.timing.botMs * (0.6 + Math.random() * 0.9);
+  }
+
+  /** Called after every change: any bot that needs to act schedules its move. */
+  private driveBots(): void {
+    for (const p of this.seated) {
+      if (!p.bot) continue;
+      const personality = p.bot;
+      if (this.phase === 'betting' && !p.ready) {
+        this.botLater(`${p.id}:bet:${this.round}`, this.thinkMs() * 1.4, () => {
+          if (this.phase !== 'betting' || !this.players.has(p.id)) return;
+          if (p.bet === 0 && p.balance < this.rules.minBet) this.resetChips(p.id);
+          if (p.bet === 0) this.addBet(p.id, botBet(p.balance, personality, this.rules.minBet, this.rules.maxBet));
+          this.setReady(p.id);
+        });
+      }
+      if (this.phase === 'insurance' && p.inRound && p.insurance === null) {
+        this.botLater(`${p.id}:ins:${this.round}`, this.thinkMs() * 0.6, () => {
+          if (this.phase === 'insurance' && p.insurance === null) this.takeInsurance(p.id, false);
+        });
+      }
+    }
+    const turn = this.turn;
+    const p = turn && this.phase === 'playing' ? this.players.get(turn.playerId) : undefined;
+    const hand = p && turn ? p.hands[turn.handIndex] : undefined;
+    if (p?.bot && turn && hand) {
+      const key = `${p.id}:turn:${this.round}:${turn.handIndex}:${p.hands.length}:${hand.cards.length}`;
+      this.botLater(key, this.thinkMs(), () => {
+        if (this.phase !== 'playing' || this.turn?.playerId !== p.id || this.turn.handIndex !== turn.handIndex) return;
+        const legal = legalActions({ hand, handCount: p.hands.length, balance: p.balance, rules: this.rules });
+        if (legal.length) this.act(p.id, basicStrategy(hand.cards, this.dealer[0]!, legal));
+      });
+    }
+  }
+
+  private botSay(bot: Player, text: string, delayMs: number): void {
+    setTimeout(() => {
+      if (this.players.has(bot.id)) this.onBotChat(bot.id, text);
+    }, delayMs);
+  }
+
+  /** After the payout, bots sometimes comment on how it went. */
+  private botReactions(): void {
+    let delay = 700;
+    for (const p of this.participants) {
+      if (p.bot) {
+        if (Math.random() > p.bot.chatty * 0.45) continue;
+        const net = p.results.reduce((s, r) => s + (r?.net ?? 0), 0);
+        const kind = p.results.some((r) => r?.outcome === 'blackjack')
+          ? 'blackjack'
+          : net > 0
+            ? 'win'
+            : p.results.some((r) => r?.outcome === 'bust')
+              ? 'bust'
+              : net < 0
+                ? 'lose'
+                : null;
+        if (kind) this.botSay(p, botLine(kind), (delay += 600 + Math.random() * 600));
+      } else if (p.results.some((r) => r?.outcome === 'blackjack')) {
+        const bots = this.seated.filter((b) => b.bot);
+        const fan = bots[Math.floor(Math.random() * bots.length)];
+        if (fan && Math.random() < 0.6) this.botSay(fan, botLine('othersBlackjack', p.name), (delay += 800));
+      }
+    }
   }
 
   private emit(event: TableEvent): void {
@@ -624,6 +759,7 @@ export class Table {
       const events = this.pendingEvents;
       this.pendingEvents = [];
       this.onUpdate(events);
+      this.driveBots();
     });
   }
 
@@ -655,6 +791,8 @@ export class Table {
           id: p.id,
           name: p.name,
           seat: p.seat,
+          bot: p.bot !== null,
+          look: p.look,
           balance: p.balance,
           bet: p.bet,
           ready: p.ready,

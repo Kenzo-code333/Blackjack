@@ -1,22 +1,32 @@
 // The heads-up display: everything you click. It sits on top of the table view
 // (2D or 3D) and never draws the table itself.
 
-import type { Action } from '../game/index.js';
+import type { Action, Card } from '../game/index.js';
 import { CHIP_VALUES, type ChatMessage, type PublicPlayer, type PublicState } from '../shared/protocol.js';
 import { h, show, toast } from './dom.js';
-import { bannerText, money } from './format.js';
+import { OUTCOME_TEXT, SUIT_SYMBOL, bannerText, isRed, money } from './format.js';
 import type { Net } from './net.js';
+
+export interface SoundControls {
+  readonly muted: boolean;
+  readonly music: number;
+  readonly sfx: number;
+  setMuted(m: boolean): void;
+  setMusic(v: number): void;
+  setSfx(v: number): void;
+}
 
 export interface HudOptions {
   onLeave: () => void;
-  onToggleMute: () => boolean; // returns new muted state
   onToggleGraphics: () => boolean; // returns new low-graphics state
-  muted: boolean;
   lowGraphics: boolean;
+  sound: SoundControls;
   /** Called after any button press, e.g. to unlock audio on mobile. */
   onInteract?: () => void;
   /** Click feedback sounds. */
-  sound?: (name: 'click' | 'chip') => void;
+  play?: (name: 'click' | 'chip') => void;
+  /** False in the preview build, where friends find tables in the list instead. */
+  canInvite?: boolean;
 }
 
 const ACTION_LABELS: Record<Action, string> = { hit: 'Hit', stand: 'Stand', double: 'Double', split: 'Split' };
@@ -27,6 +37,8 @@ export class Hud {
   private state: PublicState | null = null;
   private lastBet = 0;
   private lastPhase = '';
+  private myCardsKey = '';
+  private shownCards = new Set<string>();
   private unreadChat = 0;
   private timerFrame = 0;
 
@@ -47,6 +59,9 @@ export class Hud {
   private readonly insuranceRow = h('div', { class: 'row insurance' });
   private readonly insuranceText = h('span', { class: 'insurance-text' });
   private readonly hostRow = h('div', { class: 'row host' });
+  private addBotBtn!: HTMLButtonElement;
+  private readonly myCards = h('div', { class: 'my-cards', 'aria-live': 'polite' });
+  private readonly soundPanel: HTMLElement;
   private readonly hostBtn: HTMLButtonElement;
   private readonly seatRow = h('div', { class: 'row seat' });
   private readonly brokeRow = h('div', { class: 'row broke' });
@@ -68,7 +83,7 @@ export class Hud {
   ) {
     const press = (fn: () => unknown) => () => {
       opts.onInteract?.();
-      opts.sound?.('click');
+      opts.play?.('click');
       void fn();
     };
     const send = (p: Promise<{ ok: boolean; error?: string }>) =>
@@ -79,7 +94,7 @@ export class Hud {
     // --- Top bar ---
     const code = net.session?.code ?? '';
     const inviteBtn = (this.inviteBtn = h('button', { class: 'btn small gold invite', 'aria-label': 'Copy invite link', onclick: press(() => this.invite()) }, h('span', { class: 'long' }, 'Copy invite link'), h('span', { class: 'short' }, '🔗', h('span', { class: 'invite-word' }, ' Invite'))));
-    this.muteBtn = h('button', { class: 'icon-btn', title: 'Sound on/off', 'aria-label': 'Sound', onclick: press(() => this.toggleMute()) });
+    this.muteBtn = h('button', { class: 'icon-btn', title: 'Sound', 'aria-label': 'Sound settings', onclick: press(() => this.togglePanel('sound')) });
     this.gfxBtn = h('button', { class: 'icon-btn', title: 'Low graphics on/off', 'aria-label': 'Graphics quality', onclick: press(() => this.toggleGfx()) });
     const chatBtn = h(
       'button',
@@ -116,7 +131,7 @@ export class Hud {
           'aria-label': `Bet ${value}`,
           onclick: () => {
             opts.onInteract?.();
-            opts.sound?.('chip');
+            opts.play?.('chip');
             void send(net.bet(value));
           },
         },
@@ -147,7 +162,8 @@ export class Hud {
     );
 
     this.hostBtn = h('button', { class: 'btn gold big', onclick: press(() => send(net.hostStart())) }, 'Start round');
-    this.hostRow.append(this.hostBtn);
+    this.addBotBtn = h('button', { class: 'btn ghost small', onclick: press(() => send(net.addBot())) }, '+ Add bot');
+    this.hostRow.append(this.hostBtn, this.addBotBtn);
     this.seatRow.append(h('button', { class: 'btn gold', onclick: press(() => send(net.takeSeat())) }, 'Take a seat'));
     this.brokeRow.append(
       h('span', {}, 'Out of chips?'),
@@ -155,7 +171,7 @@ export class Hud {
     );
 
     const wallet = h('div', { class: 'wallet' }, h('span', {}, 'Chips ', this.balanceEl), h('span', {}, 'Bet ', this.betEl));
-    const controls = h('footer', { class: 'controls' }, wallet, this.hostRow, this.insuranceRow, this.actionsRow, this.bettingRow, this.seatRow, this.brokeRow);
+    const controls = h('footer', { class: 'controls' }, this.myCards, wallet, this.hostRow, this.insuranceRow, this.actionsRow, this.bettingRow, this.seatRow, this.brokeRow);
 
     // --- Side panels ---
     const chatForm = h(
@@ -212,13 +228,48 @@ export class Hud {
           h('li', {}, h('b', {}, 'Split'), ' (P) a pair into two hands, up to 3 hands'),
           h('li', {}, h('b', {}, 'Insurance'), ' when the dealer shows an ace: half your bet, pays 2 to 1'),
           h('li', {}, 'You have 20 seconds per decision, then you stand automatically.'),
+          h(
+            'li',
+            {},
+            h('b', {}, 'Soft'),
+            ' hands have an ace counted as 11, so one more card can never bust you: the ace just drops to 1. Soft 12 is A + A; draw a 10 and it becomes a hard 12. ',
+            h('b', {}, 'Hard'),
+            ' hands have no ace counted as 11.',
+          ),
           h('li', {}, 'Drag on the table to look around. Double-click (or double-tap) to look straight ahead.'),
         ),
         h('p', { class: 'muted' }, '6 decks · Dealer stands on soft 17 · Blackjack pays 3 to 2 · Play money only.'),
       ),
     );
 
-    this.el = h('div', { class: 'hud' }, top, banner, controls, this.chatPanel, this.playersPanel, this.helpPanel, this.offline);
+    // Sound settings.
+    const slider = (label: string, id: string, value: number, onInput: (v: number) => void) => {
+      const input = h('input', { type: 'range', id, min: 0, max: 100, value: Math.round(value * 100), 'aria-label': label });
+      input.addEventListener('input', () => onInput(Number(input.value) / 100));
+      return h('label', { class: 'slider-row', for: id }, h('span', {}, label), input);
+    };
+    const muteBox = h('input', { type: 'checkbox', id: 'mute-all', checked: opts.sound.muted });
+    muteBox.addEventListener('change', () => {
+      opts.sound.setMuted(muteBox.checked);
+      this.updateToggles();
+    });
+    this.soundPanel = h(
+      'aside',
+      { class: 'panel sound-panel', hidden: true },
+      h('div', { class: 'panel-head' }, h('h2', {}, 'Sound'), h('button', { class: 'icon-btn', 'aria-label': 'Close', onclick: () => this.togglePanel(null) }, '✕')),
+      h(
+        'div',
+        { class: 'sound-body' },
+        slider('Music', 'vol-music', opts.sound.music, (v) => opts.sound.setMusic(v)),
+        slider('Effects', 'vol-sfx', opts.sound.sfx, (v) => {
+          opts.sound.setSfx(v);
+          opts.play?.('chip');
+        }),
+        h('label', { class: 'check-row', for: 'mute-all' }, muteBox, h('span', {}, 'Mute everything')),
+      ),
+    );
+
+    this.el = h('div', { class: 'hud' }, top, banner, controls, this.chatPanel, this.playersPanel, this.helpPanel, this.soundPanel, this.offline);
 
     // Keyboard shortcuts (ignored while typing in chat).
     window.addEventListener('keydown', this.onKey);
@@ -259,7 +310,7 @@ export class Hud {
 
     this.banner.textContent = bannerText(state, this.net.me);
     // Solo tables are private, so there is nobody to invite.
-    this.inviteBtn.hidden = state.solo;
+    this.inviteBtn.hidden = state.solo || this.opts.canInvite === false;
     this.balanceEl.textContent = me ? money(me.balance) : '–';
     const onTable = me && state.phase !== 'results' ? me.hands.reduce((s, x) => s + x.bet, 0) || me.bet : 0;
     this.betEl.textContent = money(onTable);
@@ -295,7 +346,12 @@ export class Hud {
 
     const isHost = me?.isHost ?? false;
     const canStart = isHost && !state.solo && (state.phase === 'waiting' || (state.phase === 'betting' && state.players.some((p) => p.bet > 0)));
-    show(this.hostRow, canStart);
+    const seatsFree = state.players.filter((p) => p.seat !== null).length < 5;
+    const canAddBot = isHost && !state.solo && seatsFree && (state.phase === 'waiting' || state.phase === 'betting');
+    show(this.hostRow, canStart || canAddBot);
+    this.hostBtn.hidden = !canStart;
+    this.addBotBtn.hidden = !canAddBot;
+    this.renderMyCards(state);
     this.hostBtn.textContent = state.phase === 'waiting' ? 'Start round' : 'Deal now for everyone';
     this.hostBtn.className = state.phase === 'waiting' ? 'btn gold big' : 'btn ghost small';
 
@@ -313,7 +369,7 @@ export class Hud {
       h(
         'li',
         { class: p.connected ? '' : 'away' },
-        h('span', { class: 'p-name' }, p.isHost ? '👑 ' : '', p.name, p.id === this.net.me ? ' (you)' : ''),
+        h('span', { class: 'p-name' }, p.isHost ? '👑 ' : '', p.name, p.id === this.net.me ? ' (you)' : '', p.bot ? h('span', { class: 'bot-tag' }, 'bot') : null),
         h('span', { class: 'p-meta' }, p.seat === null ? 'watching' : `seat ${p.seat + 1}`, ' · ', money(p.balance), p.connected ? '' : ' · away'),
         amHost && p.id !== this.net.me
           ? h(
@@ -357,13 +413,15 @@ export class Hud {
     this.chatBadge.hidden = true;
   }
 
-  private togglePanel(which: 'chat' | 'players' | 'help' | null): void {
+  private togglePanel(which: 'chat' | 'players' | 'help' | 'sound' | null): void {
     const openChat = which === 'chat' && this.chatPanel.hidden;
     const openPlayers = which === 'players' && this.playersPanel.hidden;
     const openHelp = which === 'help' && this.helpPanel.hidden;
+    const openSound = which === 'sound' && this.soundPanel.hidden;
     this.chatPanel.hidden = !openChat;
     this.playersPanel.hidden = !openPlayers;
     this.helpPanel.hidden = !openHelp;
+    this.soundPanel.hidden = !openSound;
     if (openChat) {
       this.unreadChat = 0;
       this.chatBadge.hidden = true;
@@ -392,9 +450,49 @@ export class Hud {
     }
   }
 
-  private toggleMute(): void {
-    this.opts.muted = this.opts.onToggleMute();
-    this.updateToggles();
+  /** Your hands as big, readable cards, plus the dealer's visible cards. */
+  private renderMyCards(state: PublicState): void {
+    const me = state.players.find((p) => p.id === this.net.me);
+    const hands = me?.hands ?? [];
+    const key = JSON.stringify([hands, state.dealer.cards, state.turn, state.phase]);
+    if (key === this.myCardsKey) return;
+    this.myCardsKey = key;
+    this.myCards.hidden = hands.length === 0;
+    if (!hands.length) return;
+    // Only cards that weren't shown before slide in.
+    const seen = this.shownCards;
+    const next = new Set<string>();
+    const card = (where: string) => (c: Card | null, i: number) => {
+      const id = `${where}:${i}:${c ? c.rank + c.suit : 'back'}`;
+      next.add(id);
+      const fresh = !seen.has(id) ? ' fresh' : '';
+      return c
+        ? h('span', { class: `mc-card${isRed(c) ? ' red' : ''}${fresh}`, 'aria-label': `${c.rank} of ${c.suit}` }, h('b', {}, c.rank), SUIT_SYMBOL[c.suit])
+        : h('span', { class: `mc-card back${fresh}`, 'aria-label': 'face-down card' });
+    };
+    this.shownCards = next;
+    const dealer = h(
+      'div',
+      { class: 'mc-hand dealer' },
+      h('span', { class: 'mc-who' }, 'Dealer'),
+      h('span', { class: 'mc-cards' }, state.dealer.cards.map(card('d'))),
+      state.dealer.label ? h('span', { class: 'mc-total' }, state.dealer.label) : null,
+    );
+    const mine = hands.map((hand, i) => {
+      const active = state.phase === 'playing' && state.turn?.playerId === me!.id && state.turn.handIndex === i;
+      return h(
+        'div',
+        { class: `mc-hand${active ? ' active' : ''}${hand.outcome ? ` ${hand.outcome}` : ''}` },
+        h('span', { class: 'mc-who' }, hands.length > 1 ? `Hand ${i + 1}` : 'You'),
+        h('span', { class: 'mc-cards' }, hand.cards.map(card(`h${i}`))),
+        h(
+          'span',
+          { class: 'mc-total' },
+          !hand.outcome ? hand.label : hand.outcome === 'blackjack' ? 'Blackjack!' : `${hand.label} · ${OUTCOME_TEXT[hand.outcome]}`,
+        ),
+      );
+    });
+    this.myCards.replaceChildren(dealer, ...mine);
   }
 
   /** Called when the scene lowered graphics on its own. */
@@ -410,7 +508,7 @@ export class Hud {
   }
 
   private updateToggles(): void {
-    this.muteBtn.textContent = this.opts.muted ? '🔇' : '🔊';
+    this.muteBtn.textContent = this.opts.sound.muted ? '🔇' : '🔊';
     this.gfxBtn.textContent = this.opts.lowGraphics ? '◐' : '●';
     this.gfxBtn.title = this.opts.lowGraphics ? 'Low graphics (click for high)' : 'High graphics (click for low)';
   }

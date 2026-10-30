@@ -1,9 +1,14 @@
-// The dealer: a friendly, stylized robot in a vest and bow tie.
+// The dealer: a person in a white shirt, burgundy vest and bow tie.
 // Arms use two-bone IK: animations just move each hand to a target and the elbows follow.
 
 import * as THREE from 'three';
 import { DEALER_POS, TABLE_Y } from './layout.js';
+import type { Look } from '../../shared/protocol.js';
+import { buildHead, skinColor } from './human.js';
 import { type Animator, damp, ease } from './tween.js';
+
+/** The house dealer's look: dark short hair, medium skin. */
+const DEALER_LOOK: Look = { skin: 2, hair: 0, hairColor: 1, outfit: 5, extra: 0 };
 
 export type Side = 'left' | 'right'; // the dealer's own left (+x) and right (−x)
 
@@ -68,7 +73,7 @@ export class Dealer {
   readonly limbs = new THREE.Group();
   private readonly torso: THREE.Group;
   private readonly head: THREE.Group;
-  private readonly eyes: THREE.Mesh[] = [];
+  private readonly eyes: THREE.Object3D[] = [];
   readonly arms: Record<Side, Arm>;
   private readonly lookTarget = new THREE.Vector3(0, 1.2, 1.5);
   private readonly lookCurrent = new THREE.Vector3(0, 1.2, 1.5);
@@ -80,9 +85,8 @@ export class Dealer {
   constructor(private readonly anim: Animator) {
     const shirt = new THREE.MeshStandardMaterial({ color: 0xf1ede4, roughness: 0.7 });
     const vest = new THREE.MeshStandardMaterial({ color: 0x5b1420, roughness: 0.55 });
-    const metal = new THREE.MeshStandardMaterial({ color: 0x9aa3ad, roughness: 0.3, metalness: 0.8 });
     const dark = new THREE.MeshStandardMaterial({ color: 0x15171b, roughness: 0.35, metalness: 0.4 });
-    const glove = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.6 });
+    const skin = new THREE.MeshStandardMaterial({ color: skinColor(DEALER_LOOK), roughness: 0.62 });
     const gold = new THREE.MeshStandardMaterial({ color: 0xd2a94a, metalness: 0.8, roughness: 0.3 });
 
     this.group.position.copy(DEALER_POS);
@@ -130,44 +134,21 @@ export class Dealer {
     shoulders.position.y = 0.43;
     this.torso.add(chest, vestMesh, vee, bow, nameBadge, shoulders, ...buttons);
 
-    // Neck and head: a rounded "screen" face with two glowing eyes.
-    const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.055, 0.08, 12), metal);
-    neck.position.y = 0.53;
+    // Neck and head: a person, with a neat side part and a friendly face.
+    const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.042, 0.05, 0.09, 12), skin);
+    neck.position.y = 0.52;
     this.torso.add(neck);
     this.head = new THREE.Group();
-    this.head.position.y = 0.65;
+    this.head.position.y = 0.66;
     this.torso.add(this.head);
-    const skull = new THREE.Mesh(new THREE.SphereGeometry(0.13, 24, 18), metal);
-    skull.scale.set(1, 0.95, 0.95);
-    skull.castShadow = true;
-    const visor = new THREE.Mesh(new THREE.SphereGeometry(0.115, 24, 16, -Math.PI * 0.42, Math.PI * 0.84, Math.PI * 0.28, Math.PI * 0.4), dark);
-    visor.position.z = 0.025;
-    visor.scale.set(1, 0.95, 1);
-    const eyeMat = new THREE.MeshBasicMaterial({ color: 0x7ff0ff });
-    for (const s of [-1, 1]) {
-      const eye = new THREE.Mesh(new THREE.CapsuleGeometry(0.012, 0.018, 4, 8), eyeMat);
-      eye.position.set(s * 0.042, 0.015, 0.132);
-      this.eyes.push(eye);
-      this.head.add(eye);
-    }
-    const mouth = new THREE.Mesh(new THREE.TorusGeometry(0.03, 0.005, 6, 16, Math.PI), eyeMat);
-    mouth.rotation.z = Math.PI;
-    mouth.position.set(0, -0.045, 0.125);
-    const antenna = new THREE.Mesh(new THREE.CylinderGeometry(0.004, 0.004, 0.06), metal);
-    antenna.position.y = 0.15;
-    const tip = new THREE.Mesh(new THREE.SphereGeometry(0.014, 10, 8), new THREE.MeshBasicMaterial({ color: 0xff5a5a }));
-    tip.position.y = 0.185;
-    const ears = [-1, 1].map((s) => {
-      const ear = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.03, 14), dark);
-      ear.rotation.z = Math.PI / 2;
-      ear.position.x = s * 0.13;
-      return ear;
-    });
-    this.head.add(skull, visor, mouth, antenna, tip, ...ears);
+    const face = buildHead(DEALER_LOOK);
+    face.group.scale.setScalar(1.08);
+    this.head.add(face.group);
+    this.eyes.push(...face.eyes);
 
     this.arms = {
-      left: new Arm('left', shirt, glove, this.limbs),
-      right: new Arm('right', shirt, glove, this.limbs),
+      left: new Arm('left', shirt, skin, this.limbs),
+      right: new Arm('right', shirt, skin, this.limbs),
     };
     this.arms.left.rest.set(0.17, TABLE_Y + 0.04, DEALER_POS.z + 0.36);
     this.arms.right.rest.set(-0.17, TABLE_Y + 0.04, DEALER_POS.z + 0.36);
@@ -243,7 +224,7 @@ export class Dealer {
 
     // Blink every few seconds.
     this.blinkTimer -= dt;
-    const blink = this.blinkTimer < 0.12 ? 0.15 : 1;
+    const blink = this.blinkTimer < 0.12 ? 0.1 : 1;
     if (this.blinkTimer < 0) this.blinkTimer = 2 + Math.random() * 3.5;
     for (const e of this.eyes) e.scale.y = blink;
 

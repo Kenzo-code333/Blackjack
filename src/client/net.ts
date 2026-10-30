@@ -3,8 +3,8 @@
 
 import { type Socket, io } from 'socket.io-client';
 import type { Action } from '../game/index.js';
-import type { ChatMessage, ClientToServer, JoinResult, PublicState, ServerToClient, TableEvent } from '../shared/protocol.js';
-import { store } from './storage.js';
+import type { ChatMessage, ClientToServer, JoinResult, Look, PublicState, ServerToClient, TableEvent } from '../shared/protocol.js';
+import { prefs, store } from './storage.js';
 
 type Res<T = object> = ({ ok: true } & T) | { ok: false; error: string; code?: string };
 
@@ -84,6 +84,12 @@ export class Net {
       this.session = null;
       this.onKicked();
     });
+    this.socket.on('closed', ({ reason }) => {
+      if (this.session) forgetSession(this.session.code);
+      this.session = null;
+      this.state = null;
+      this.onLost(reason);
+    });
   }
 
   private setStatus(status: ConnectionStatus): void {
@@ -121,14 +127,18 @@ export class Net {
     return res;
   }
 
-  async create(name: string, solo: boolean) {
-    return this.enter(await this.request<JoinResult>('room:create', { name, solo }));
+  /** `bots`: computer players to seat with you. */
+  async create(name: string, opts: { solo?: boolean; bots?: number } = {}) {
+    return this.enter(await this.request<JoinResult>('room:create', { name, ...opts, look: prefs.look }));
   }
 
   async join(code: string, name: string) {
     const token = savedSession(code)?.token;
-    return this.enter(await this.request<JoinResult>('room:join', { code, name, token }));
+    return this.enter(await this.request<JoinResult>('room:join', { code, name, token, look: prefs.look }));
   }
+
+  setLook = (look: Look) => this.request('player:look', { look });
+  addBot = () => this.request('host:addBot');
 
   /** Take back a saved seat without creating a new player. */
   async rejoin(code: string) {

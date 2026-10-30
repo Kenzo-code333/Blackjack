@@ -17,7 +17,7 @@
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
     "play": "tsx scripts/play-cli.ts",
-    "build:preview": "vite build -c vite.preview.config.ts"
+    "build:preview": "vite build -c vite.preview.config.ts && node scripts/assemble-preview.mjs"
   },
   "devDependencies": {
     "@types/express": "^5.0.6",

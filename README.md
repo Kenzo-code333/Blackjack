@@ -8,6 +8,11 @@ link to friends: they type a name and sit down. No accounts, no installs, play m
 - **Up to 5 players per table**, plus spectators when it's full
 - **Server-authoritative rules**: the server deals, checks every move and pays out.
   Browsers never see the hole card or the shoe order early.
+- **Play with bots**: 1–4 computer players who play basic strategy and chat back
+- **Your own character**: pick skin, hair style and colour, outfit and accessories; the
+  dealer and everyone at the table are people, with speech bubbles when they chat
+- **Always-readable cards**: your hands and the dealer's cards also appear as big cards in a corner panel
+- **Music and sound**: a generated lounge-jazz trio and casino sound effects, with separate volumes
 - **Works on phones**, with a low-graphics mode and a 2D fallback for devices without 3D
 
 ## Table rules
@@ -49,7 +54,7 @@ page and reloads it when you change code (port 5173). You only ever open 5173.
 | `npm run play` | Plays blackjack in the terminal using the real rules module |
 | `npm run build` | Builds the browser code into `dist/client` |
 | `npm start` | Runs the production server (serves `dist/client` too) on port 3000 |
-| `npm run build:preview` | Builds an offline, solo-only version into `dist/preview` (the game engine runs in the page; used for the claude.ai preview) |
+| `npm run build:preview` | Builds the single-page claude.ai preview into `dist/preview/blackjack-table.html`: the game engine runs in the page, and online tables use the artifact's live room |
 
 ### Testing multiplayer locally
 
@@ -123,6 +128,14 @@ Railway has a free trial, then a small monthly fee.
 - **"Table not found":** the server restarted or slept since the table was created. Create a new one.
 
 ---
+
+## The claude.ai preview
+
+`npm run build:preview` packs the whole game into one HTML page that runs without a server:
+solo and bot tables run in your browser. **Online tables** use claude.ai's live room: the
+host's page runs the dealer and rules, and friends' moves travel through the room. Friends
+need the page shared with them as **Contributor** (Viewers can't send moves), and the table
+closes if the host leaves or reloads.
 
 ## How it works
 

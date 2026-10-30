@@ -7,6 +7,47 @@ import type { Action, Card, Outcome } from '../game/index.js';
 export type Phase = 'waiting' | 'betting' | 'dealing' | 'insurance' | 'playing' | 'dealer' | 'results';
 
 export const MAX_SEATS = 5;
+
+/** How a player's character looks. Each field is an index into the option lists below. */
+export interface Look {
+  skin: number;
+  hair: number;
+  hairColor: number;
+  outfit: number;
+  extra: number;
+}
+
+/** The choices in the character editor (labels in the same order as the indexes). */
+export const LOOK_OPTIONS = {
+  skin: ['#f6d7c3', '#e8b896', '#d29a72', '#b07650', '#8a5636', '#5e3a24'],
+  hair: ['Short', 'Long', 'Bun', 'Curly', 'Buzz cut', 'Bald', 'Ponytail'],
+  hairColor: ['#1d1510', '#3b2414', '#6b4423', '#a26a32', '#d9b06a', '#8f8f8f', '#9c2f2f'],
+  outfit: ['#2f6fb0', '#b03b5a', '#2f8f6b', '#7a4ba8', '#c0782a', '#2b2b2b', '#e4e0d6', '#1f5f6e'],
+  extra: ['None', 'Glasses', 'Sunglasses', 'Cap', 'Beanie'],
+} as const;
+
+export function randomLook(rand: () => number = Math.random): Look {
+  const pick = (n: number) => Math.floor(rand() * n);
+  return {
+    skin: pick(LOOK_OPTIONS.skin.length),
+    hair: pick(LOOK_OPTIONS.hair.length),
+    hairColor: pick(LOOK_OPTIONS.hairColor.length),
+    outfit: pick(LOOK_OPTIONS.outfit.length),
+    extra: rand() < 0.55 ? 0 : 1 + pick(LOOK_OPTIONS.extra.length - 1),
+  };
+}
+
+/** Accepts only valid option indexes; anything else becomes a random look. */
+export function cleanLook(raw: unknown): Look {
+  const r = (raw ?? {}) as Record<string, unknown>;
+  const fallback = randomLook();
+  const field = (key: keyof Look) => {
+    const v = r[key];
+    const max = LOOK_OPTIONS[key].length;
+    return typeof v === 'number' && Number.isInteger(v) && v >= 0 && v < max ? v : fallback[key];
+  };
+  return { skin: field('skin'), hair: field('hair'), hairColor: field('hairColor'), outfit: field('outfit'), extra: field('extra') };
+}
 export const CHIP_VALUES = [5, 25, 100, 500] as const;
 
 export interface PublicHand {
@@ -25,6 +66,9 @@ export interface PublicPlayer {
   id: string;
   name: string;
   seat: number | null; // null = spectator
+  /** A computer-controlled player. */
+  bot: boolean;
+  look: Look;
   balance: number;
   /** Chips in the betting circle (main bet, before any double/split). */
   bet: number;
@@ -94,9 +138,12 @@ export interface JoinResult {
 }
 
 export interface ClientToServer {
-  'room:create': (p: { name: string; solo?: boolean }, ack: Ack<JoinResult>) => void;
+  /** `bots`: how many computer players to seat with you (0–4). */
+  'room:create': (p: { name: string; solo?: boolean; bots?: number; look?: Look }, ack: Ack<JoinResult>) => void;
   /** `rejoin`: automatic reconnect with a saved token; fails instead of creating a new player. */
-  'room:join': (p: { code: string; name: string; token?: string; rejoin?: boolean }, ack: Ack<JoinResult>) => void;
+  'room:join': (p: { code: string; name: string; token?: string; rejoin?: boolean; look?: Look }, ack: Ack<JoinResult>) => void;
+  'player:look': (p: { look: Look }, ack: Ack) => void;
+  'host:addBot': (ack: Ack) => void;
   'room:leave': () => void;
   'seat:take': (ack: Ack) => void;
   'bet:add': (p: { amount: number }, ack: Ack) => void;
@@ -115,4 +162,6 @@ export interface ServerToClient {
   chat: (msg: ChatMessage) => void;
   'chat:history': (msgs: ChatMessage[]) => void;
   kicked: () => void;
+  /** The table is gone (e.g. the host of an online preview table left). */
+  closed: (p: { reason: string }) => void;
 }

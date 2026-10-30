@@ -4,5 +4,7 @@ import type { PublicState, TableEvent } from '../shared/protocol.js';
 export interface TableRenderer {
   update(state: PublicState, events: TableEvent[], me: string | null): void;
   setLowGraphics(low: boolean): void;
+  /** Shows a chat line at that player's seat, if the view can. */
+  say?(playerId: string, text: string): void;
   dispose(): void;
 }

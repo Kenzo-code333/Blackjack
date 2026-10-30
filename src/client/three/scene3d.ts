@@ -107,6 +107,9 @@ export class Table3D implements TableRenderer {
   private readonly eyeTarget = new THREE.Vector3();
   private readonly lookTargetV = new THREE.Vector3();
   private cameraPlaced = false;
+  private lastDrag = -100;
+  private turnGlance: string | null = null;
+  private chatGlance: { playerId: string; until: number } | null = null;
   private clock = 0;
 
   // Frame-rate watch for automatic low graphics.
@@ -506,7 +509,7 @@ export class Table3D implements TableRenderer {
       }
       const isMe = p.id === this.me;
       if (!isMe && !view.avatar) {
-        view.avatar = new Avatar(this.visualSeat(state, p), angle);
+        view.avatar = new Avatar(angle, p.look);
         this.scene.add(view.avatar.group);
       } else if (isMe && view.avatar) {
         view.avatar.dispose();
@@ -608,7 +611,9 @@ export class Table3D implements TableRenderer {
       this.updateLabels(view, p);
 
       // Avatar name tag.
+      view.avatar?.setLook(p.look);
       view.avatar?.setInfo({
+        bot: p.bot,
         name: p.name,
         balance: `${money(p.balance)} chips`,
         isTurn: state.turn?.playerId === p.id,
@@ -720,7 +725,7 @@ export class Table3D implements TableRenderer {
     }
   }
 
-  /** Dealer looks at whoever is acting; a ping when it becomes your turn. */
+  /** Dealer looks at whoever is acting; you glance at them too; a ping when it becomes your turn. */
   private reactToState(state: PublicState, prev: PublicState | null): void {
     const turn = state.turn;
     if (turn) {
@@ -731,6 +736,30 @@ export class Table3D implements TableRenderer {
     } else if (state.phase === 'betting') {
       this.dealer.lookAt(new THREE.Vector3(0, 1.1, 1.2));
     }
+    this.turnGlance = turn && turn.playerId !== this.me && state.phase === 'playing' ? turn.playerId : null;
+  }
+
+  /** A chat line: speech bubble over that player, and a quick look their way. */
+  say(playerId: string, text: string): void {
+    const view = this.seats.get(playerId);
+    if (!view?.avatar) return;
+    view.avatar.say(text);
+    this.chatGlance = { playerId, until: this.clock + 3 };
+  }
+
+  /** How far to turn your head (radians, + = right) to look at another player. */
+  private glanceYaw(): number {
+    if (this.clock - this.lastDrag < 6) return 0; // the player is looking around themselves
+    const mine = this.me ? this.state?.turn?.playerId === this.me : false;
+    if (mine) return 0;
+    const who = this.turnGlance ?? (this.chatGlance && this.clock < this.chatGlance.until ? this.chatGlance.playerId : null);
+    const face = who ? this.seats.get(who)?.avatar?.faceWorld() : undefined;
+    if (!face) return 0;
+    const d0 = this.look.clone().sub(this.eye).setY(0).normalize();
+    const d1 = face.sub(this.eye).setY(0).normalize();
+    const right = new THREE.Vector3(-d0.z, 0, d0.x);
+    const angle = Math.atan2(d1.dot(right), d1.dot(d0));
+    return THREE.MathUtils.clamp(angle * 0.6, -0.95, 0.95);
   }
 
   // ---------- Input ----------
@@ -754,6 +783,7 @@ export class Table3D implements TableRenderer {
     this.drag.moved += Math.abs(dx) + Math.abs(dy);
     const speed = 2.2 / Math.max(rect.height, 1);
     this.yawTarget = THREE.MathUtils.clamp(this.yawTarget + dx * speed, -0.85, 0.85);
+    this.lastDrag = this.clock;
     this.pitchTarget = THREE.MathUtils.clamp(this.pitchTarget + dy * speed, -0.45, 0.35);
   };
 
@@ -778,6 +808,7 @@ export class Table3D implements TableRenderer {
   };
 
   private recenter = () => {
+    this.lastDrag = -100;
     this.yawTarget = 0;
     this.pitchTarget = 0;
   };
@@ -813,7 +844,7 @@ export class Table3D implements TableRenderer {
     this.look.x = damp(this.look.x, this.lookTargetV.x, 3, dt);
     this.look.y = damp(this.look.y, this.lookTargetV.y, 3, dt);
     this.look.z = damp(this.look.z, this.lookTargetV.z, 3, dt);
-    this.yaw = damp(this.yaw, this.yawTarget + this.hoverX * 0.06, 6, dt);
+    this.yaw = damp(this.yaw, this.yawTarget + this.hoverX * 0.06 + this.glanceYaw(), 2.5, dt);
     this.pitch = damp(this.pitch, this.pitchTarget + this.hoverY * 0.04, 6, dt);
 
     // Natural head sway: slow breathing bob plus a tiny drift.

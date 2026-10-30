@@ -34,12 +34,22 @@ export class Room {
 
   constructor(
     readonly code: string,
-    solo: boolean,
+    kind: { solo: boolean; autoStart?: boolean },
     private readonly settings: RoomSettings,
     onUpdate: (room: Room, events: TableEvent[]) => void,
     private readonly onClose: (room: Room) => void,
   ) {
-    this.table = new Table({ code, solo, timing: settings.timing, onUpdate: (events) => onUpdate(this, events) });
+    this.table = new Table({
+      code,
+      solo: kind.solo,
+      autoStart: kind.autoStart,
+      timing: settings.timing,
+      onUpdate: (events) => onUpdate(this, events),
+      onBotChat: (playerId, text) => {
+        const name = this.table.players.get(playerId)?.name ?? 'Player';
+        this.onChatMessage?.(this.addChat(playerId, name, text));
+      },
+    });
     this.scheduleCloseIfEmpty();
   }
 
@@ -83,12 +93,13 @@ export class Room {
     return msg;
   }
 
-  /** System line in the chat ("Alex joined"); the server broadcasts it via onSystem. */
+  /** System line in the chat ("Alex joined"); the server broadcasts it via onChatMessage. */
   system(text: string): void {
-    this.onSystem?.(this.addChat(null, 'Table', text));
+    this.onChatMessage?.(this.addChat(null, 'Table', text));
   }
 
-  onSystem?: (msg: ChatMessage) => void;
+  /** Set by the network layer: sends a chat line (system or bot) to everyone at the table. */
+  onChatMessage?: (msg: ChatMessage) => void;
 
   private scheduleCloseIfEmpty(): void {
     if (this.table.connectedCount > 0 || this.closeTimer) return;
@@ -114,12 +125,12 @@ export class RoomManager {
     private readonly onUpdate: (room: Room, events: TableEvent[]) => void,
   ) {}
 
-  create(solo: boolean): Room {
+  create(solo: boolean, autoStart = false): Room {
     let code: string;
     do {
       code = Array.from({ length: CODE_LENGTH }, () => CODE_ALPHABET[randomInt(CODE_ALPHABET.length)]).join('');
     } while (this.rooms.has(code));
-    const room = new Room(code, solo, this.settings, this.onUpdate, (r) => this.rooms.delete(r.code));
+    const room = new Room(code, { solo, autoStart }, this.settings, this.onUpdate, (r) => this.rooms.delete(r.code));
     this.rooms.set(code, room);
     return room;
   }

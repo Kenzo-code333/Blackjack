@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import express from 'express';
 import { Server, type Socket } from 'socket.io';
 import type { Action } from '../game/index.js';
-import type { Ack, ClientToServer, JoinResult, ServerToClient } from '../shared/protocol.js';
+import { type Ack, type ClientToServer, type JoinResult, type ServerToClient, cleanLook } from '../shared/protocol.js';
 import { DEFAULT_ROOM_SETTINGS, RateLimiter, type Room, RoomManager, type RoomSettings, cleanChat, cleanName, normalizeCode } from './rooms.js';
 
 type GameSocket = Socket<ClientToServer, ServerToClient, object, { code?: string; playerId?: string }>;
@@ -108,16 +108,18 @@ export function createGameServer(settings: Partial<RoomSettings> = {}): GameServ
     };
 
     const wireSystemChat = (room: Room) => {
-      room.onSystem ??= (msg) => io.to(room.code).emit('chat', msg);
+      room.onChatMessage ??= (msg) => io.to(room.code).emit('chat', msg);
     };
 
     socket.on('room:create', (payload, ack) => {
       if (typeof ack !== 'function') return;
       const name = cleanName(payload?.name);
       if (!name) return ack({ ok: false, error: 'Please enter a name' });
-      const room = rooms.create(Boolean(payload?.solo));
+      const bots = Math.max(0, Math.min(4, Math.floor(Number(payload?.bots) || 0)));
+      const room = rooms.create(Boolean(payload?.solo), bots > 0);
       wireSystemChat(room);
-      const player = room.table.addPlayer(name);
+      const player = room.table.addPlayer(name, cleanLook(payload?.look));
+      for (let i = 0; i < bots; i++) room.table.addBot(player.id);
       enter(room, player.id, ack);
     });
 
@@ -144,7 +146,7 @@ export function createGameServer(settings: Partial<RoomSettings> = {}): GameServ
       if (room.table.solo) return ack({ ok: false, error: 'That is a private solo table' });
       const name = cleanName(payload?.name);
       if (!name) return ack({ ok: false, error: 'Please enter a name' });
-      const player = room.table.addPlayer(name);
+      const player = room.table.addPlayer(name, cleanLook(payload?.look));
       room.system(player.seat === null ? `${name} is watching (table full)` : `${name} sat down`);
       enter(room, player.id, ack);
     });
@@ -175,6 +177,11 @@ export function createGameServer(settings: Partial<RoomSettings> = {}): GameServ
         return room.table.act(playerId, p.action);
       }),
     );
+    socket.on(
+      'player:look',
+      handle(({ room, playerId }, p: { look: unknown }) => room.table.setLook(playerId, cleanLook(p?.look))),
+    );
+    socket.on('host:addBot', handle(({ room, playerId }) => room.table.addBot(playerId)));
     socket.on('chips:reset', handle(({ room, playerId }) => room.table.resetChips(playerId)));
     socket.on('host:start', handle(({ room, playerId }) => room.table.hostStart(playerId)));
     socket.on(
@@ -204,6 +211,7 @@ export function createGameServer(settings: Partial<RoomSettings> = {}): GameServ
         if (!chatLimit.allow()) return 'You are sending messages too fast';
         const name = room.table.players.get(playerId)!.name;
         io.to(room.code).emit('chat', room.addChat(playerId, name, text));
+        room.table.chatHeard(playerId, text);
         return null;
       }),
     );

@@ -13,6 +13,7 @@ const FAST: TableTiming = {
   resultsMs: 1000,
   cardMs: 10,
   revealMs: 10,
+  botMs: 20,
 };
 
 function makeTable(opts: { solo?: boolean; top?: Rank[]; timing?: Partial<TableTiming> } = {}) {
@@ -381,5 +382,73 @@ describe('shoe', () => {
     expect(json).not.toContain('"Q"');
     expect(json).not.toContain('token');
     expect(Object.keys(table.publicState().shoe)).toEqual(['remaining', 'size', 'cutCardReached']);
+  });
+});
+
+describe('bots', () => {
+  it('bots bet, play basic strategy and get paid, while the human plays too', async () => {
+    const { table } = makeTable({ timing: { bettingMs: 5000 } });
+    const me = table.addPlayer('Ana');
+    expect(table.addBot(me.id)).toBeNull();
+    expect(table.addBot(me.id)).toBeNull();
+    const bots = [...table.players.values()].filter((p) => p.bot);
+    expect(bots).toHaveLength(2);
+    expect(table.hostId).toBe(me.id);
+    table.hostStart(me.id);
+    await tick(200);
+    // Bots have bet and pressed Deal; the round waits for the human.
+    for (const b of bots) {
+      expect(b.bet).toBeGreaterThanOrEqual(5);
+      expect(b.ready).toBe(true);
+    }
+    expect(table.phase).toBe('betting');
+    table.addBet(me.id, 10);
+    table.setReady(me.id);
+    for (let i = 0; i < 100 && table.phase !== 'results'; i++) {
+      if (table.phase === 'insurance' && me.insurance === null) table.takeInsurance(me.id, false);
+      if (table.turn?.playerId === me.id) table.act(me.id, 'stand');
+      await tick(50);
+    }
+    expect(table.phase).toBe('results');
+    for (const b of bots) expect(b.hands.every((h) => h.cards.length >= 2)).toBe(true);
+    // A new round starts on its own because a person is still seated.
+    await tick(1100);
+    expect(table.phase).toBe('betting');
+    expect(table.round).toBe(2);
+  });
+
+  it('only the host adds bots, bots never become host, and bot tables start by themselves', async () => {
+    const { table } = makeTable();
+    const host = table.addPlayer('Host');
+    const guest = table.addPlayer('Guest');
+    expect(table.addBot(guest.id)).toMatch(/host/);
+    table.addBot(host.id);
+    table.removePlayer(host.id);
+    expect(table.hostId).toBe(guest.id);
+
+    const auto = new Table({ code: 'AUTO01', autoStart: true, timing: FAST });
+    auto.addBot(null);
+    expect(auto.phase).toBe('waiting'); // bots alone don't start a table
+    auto.addPlayer('Ana');
+    expect(auto.phase).toBe('betting');
+    auto.dispose();
+  });
+
+  it('bots chat back sometimes, and players have looks', async () => {
+    const said: string[] = [];
+    const table = new Table({ code: 'CHAT01', autoStart: true, timing: FAST, onBotChat: (_id, text) => said.push(text) });
+    const me = table.addPlayer('Ana', { skin: 2, hair: 1, hairColor: 3, outfit: 4, extra: 1 });
+    table.addBot(me.id);
+    for (let i = 0; i < 20; i++) table.chatHeard(me.id, 'hi everyone');
+    await tick(3000);
+    expect(said.length).toBeGreaterThan(5);
+    expect(said.some((t) => t.includes('Ana'))).toBe(true);
+    expect(table.publicState().players[0]!.look).toEqual({ skin: 2, hair: 1, hairColor: 3, outfit: 4, extra: 1 });
+    expect(table.publicState().players[1]!.bot).toBe(true);
+    // Bad looks are replaced by valid ones.
+    table.setLook(me.id, { skin: 99, hair: -1, hairColor: 1.5, outfit: 2, extra: 0 } as never);
+    expect(me.look.skin).toBeLessThan(6);
+    expect(me.look.outfit).toBe(2);
+    table.dispose();
   });
 });
