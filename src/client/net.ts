@@ -6,7 +6,7 @@ import type { Action } from '../game/index.js';
 import type { ChatMessage, ClientToServer, JoinResult, PublicState, ServerToClient, TableEvent } from '../shared/protocol.js';
 import { store } from './storage.js';
 
-type Res<T = object> = ({ ok: true } & T) | { ok: false; error: string };
+type Res<T = object> = ({ ok: true } & T) | { ok: false; error: string; code?: string };
 
 export interface Session {
   code: string;
@@ -64,7 +64,7 @@ export class Net {
       // After a dropped connection, take our seat back automatically.
       if (this.session) {
         const { code, token } = this.session;
-        void this.request<JoinResult>('room:join', { code, name: '', token }).then((res) => {
+        void this.request<JoinResult>('room:join', { code, name: '', token, rejoin: true }).then((res) => {
           if (!res.ok) this.onLost(res.error);
         });
       }
@@ -127,6 +127,13 @@ export class Net {
   async join(code: string, name: string) {
     const token = savedSession(code)?.token;
     return this.enter(await this.request<JoinResult>('room:join', { code, name, token }));
+  }
+
+  /** Take back a saved seat without creating a new player. */
+  async rejoin(code: string) {
+    const token = savedSession(code)?.token;
+    if (!token) return { ok: false as const, error: 'No saved seat', code: 'SEAT_EXPIRED' };
+    return this.enter(await this.request<JoinResult>('room:join', { code, name: '', token, rejoin: true }));
   }
 
   leave(): void {

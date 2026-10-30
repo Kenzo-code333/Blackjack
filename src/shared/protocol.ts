@@ -84,7 +84,8 @@ export interface ChatMessage {
   time: number;
 }
 
-export type Ack<T = object> = (res: ({ ok: true } & T) | { ok: false; error: string }) => void;
+/** `code` lets the client react to specific errors, e.g. 'SEAT_IN_USE'. */
+export type Ack<T = object> = (res: ({ ok: true } & T) | { ok: false; error: string; code?: string }) => void;
 
 export interface JoinResult {
   code: string;
@@ -94,7 +95,8 @@ export interface JoinResult {
 
 export interface ClientToServer {
   'room:create': (p: { name: string; solo?: boolean }, ack: Ack<JoinResult>) => void;
-  'room:join': (p: { code: string; name: string; token?: string }, ack: Ack<JoinResult>) => void;
+  /** `rejoin`: automatic reconnect with a saved token; fails instead of creating a new player. */
+  'room:join': (p: { code: string; name: string; token?: string; rejoin?: boolean }, ack: Ack<JoinResult>) => void;
   'room:leave': () => void;
   'seat:take': (ack: Ack) => void;
   'bet:add': (p: { amount: number }, ack: Ack) => void;

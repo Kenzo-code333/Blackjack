@@ -9,7 +9,7 @@ import { Hud } from './hud.js';
 import { Net, forgetSession, savedSession } from './net.js';
 import type { TableRenderer } from './renderer.js';
 import { homeScreen, joinScreen } from './screens.js';
-import { prefs } from './storage.js';
+import { prefs, store } from './storage.js';
 import { Table2D } from './table2d.js';
 
 const app = document.getElementById('app')!;
@@ -63,10 +63,11 @@ function route(): void {
   if (net.session) net.leave();
   // Saved seat from earlier (reload, or came back within 60s): try to sit straight back down.
   if (savedSession(code)) {
-    void net.join(code, prefs.name).then((res) => {
+    void net.rejoin(code).then((res) => {
       if (res.ok) showTable();
       else {
-        forgetSession(code);
+        // Another tab already holds that seat: this tab joins as a new player.
+        if (res.code !== 'SEAT_IN_USE') forgetSession(code);
         showJoin(code);
       }
     });
@@ -168,6 +169,10 @@ function showTable(): void {
       renderer = new Table2D(stage);
     }
     loading.remove();
+    if (!store.local.get('bj:hinted')) {
+      store.local.set('bj:hinted', '1');
+      setTimeout(() => toast('Tip: drag to look around · tap ? for help'), 1200);
+    }
     if (net.state) {
       renderer.update(net.state, [], net.me);
       hud.update(net.state);

@@ -56,6 +56,8 @@ export class Hud {
   private readonly chatBadge = h('span', { class: 'badge', hidden: true });
   private readonly playersPanel: HTMLElement;
   private readonly playersList = h('ul', { class: 'players-list' });
+  private readonly helpPanel: HTMLElement;
+  private readonly offline = h('div', { class: 'offline', hidden: true }, h('div', { class: 'spinner' }), 'Reconnecting…');
   private readonly muteBtn: HTMLButtonElement;
   private readonly gfxBtn: HTMLButtonElement;
 
@@ -75,7 +77,7 @@ export class Hud {
 
     // --- Top bar ---
     const code = net.session?.code ?? '';
-    const inviteBtn = h('button', { class: 'btn small gold', onclick: press(() => this.invite()) }, h('span', { class: 'long' }, 'Copy invite link'), h('span', { class: 'short' }, '🔗 Invite'));
+    const inviteBtn = h('button', { class: 'btn small gold invite', 'aria-label': 'Copy invite link', onclick: press(() => this.invite()) }, h('span', { class: 'long' }, 'Copy invite link'), h('span', { class: 'short' }, '🔗', h('span', { class: 'invite-word' }, ' Invite')));
     this.muteBtn = h('button', { class: 'icon-btn', title: 'Sound on/off', 'aria-label': 'Sound', onclick: press(() => this.toggleMute()) });
     this.gfxBtn = h('button', { class: 'icon-btn', title: 'Low graphics on/off', 'aria-label': 'Graphics quality', onclick: press(() => this.toggleGfx()) });
     const chatBtn = h(
@@ -84,6 +86,7 @@ export class Hud {
       '💬',
       this.chatBadge,
     );
+    const helpBtn = h('button', { class: 'icon-btn', title: 'Help', 'aria-label': 'Help', onclick: press(() => this.togglePanel('help')) }, '?');
     const playersBtn = h('button', { class: 'icon-btn', title: 'Players', 'aria-label': 'Players', onclick: press(() => this.togglePanel('players')) }, '👥');
     const top = h(
       'header',
@@ -94,6 +97,7 @@ export class Hud {
       h('div', { class: 'spacer' }),
       chatBtn,
       playersBtn,
+      helpBtn,
       this.muteBtn,
       this.gfxBtn,
     );
@@ -190,7 +194,30 @@ export class Hud {
       ),
     );
 
-    this.el = h('div', { class: 'hud' }, top, banner, controls, this.chatPanel, this.playersPanel);
+    this.helpPanel = h(
+      'aside',
+      { class: 'panel help-panel', hidden: true },
+      h('div', { class: 'panel-head' }, h('h2', {}, 'How to play'), h('button', { class: 'icon-btn', 'aria-label': 'Close', onclick: () => this.togglePanel(null) }, '✕')),
+      h(
+        'div',
+        { class: 'help-body' },
+        h('p', {}, 'Get closer to 21 than the dealer without going over. Face cards count 10, aces 1 or 11.'),
+        h(
+          'ul',
+          {},
+          h('li', {}, h('b', {}, 'Bet: '), 'tap the chips (or your chip stacks on the table), then ', h('b', {}, 'Deal'), '.'),
+          h('li', {}, h('b', {}, 'Hit'), ' (H) take a card · ', h('b', {}, 'Stand'), ' (S) keep your hand'),
+          h('li', {}, h('b', {}, 'Double'), ' (D) double the bet, take exactly one card'),
+          h('li', {}, h('b', {}, 'Split'), ' (P) a pair into two hands, up to 3 hands'),
+          h('li', {}, h('b', {}, 'Insurance'), ' when the dealer shows an ace: half your bet, pays 2 to 1'),
+          h('li', {}, 'You have 20 seconds per decision, then you stand automatically.'),
+          h('li', {}, 'Drag on the table to look around. Double-click (or double-tap) to look straight ahead.'),
+        ),
+        h('p', { class: 'muted' }, '6 decks · Dealer stands on soft 17 · Blackjack pays 3 to 2 · Play money only.'),
+      ),
+    );
+
+    this.el = h('div', { class: 'hud' }, top, banner, controls, this.chatPanel, this.playersPanel, this.helpPanel, this.offline);
 
     // Keyboard shortcuts (ignored while typing in chat).
     window.addEventListener('keydown', this.onKey);
@@ -217,9 +244,9 @@ export class Hud {
   }
 
   setConnection(status: 'connecting' | 'online' | 'offline'): void {
+    this.offline.hidden = status === 'online';
     this.statusDot.className = `status-dot ${status}`;
     this.statusDot.title = status === 'online' ? 'Connected' : status === 'offline' ? 'Disconnected, reconnecting…' : 'Connecting…';
-    if (status === 'offline') toast('Connection lost, reconnecting…', 'error');
   }
 
   update(state: PublicState): void {
@@ -327,11 +354,13 @@ export class Hud {
     this.chatBadge.hidden = true;
   }
 
-  private togglePanel(which: 'chat' | 'players' | null): void {
+  private togglePanel(which: 'chat' | 'players' | 'help' | null): void {
     const openChat = which === 'chat' && this.chatPanel.hidden;
     const openPlayers = which === 'players' && this.playersPanel.hidden;
+    const openHelp = which === 'help' && this.helpPanel.hidden;
     this.chatPanel.hidden = !openChat;
     this.playersPanel.hidden = !openPlayers;
+    this.helpPanel.hidden = !openHelp;
     if (openChat) {
       this.unreadChat = 0;
       this.chatBadge.hidden = true;

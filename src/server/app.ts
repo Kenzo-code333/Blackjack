@@ -135,6 +135,10 @@ export function createGameServer(settings: Partial<RoomSettings> = {}): GameServ
       if (existing && (!otherSocket || !io.sockets.sockets.get(otherSocket))) {
         return enter(room, existing.id, ack);
       }
+      if (existing && payload?.rejoin) {
+        return ack({ ok: false, error: 'You are already at this table in another tab', code: 'SEAT_IN_USE' });
+      }
+      if (payload?.rejoin) return ack({ ok: false, error: 'Your seat has expired', code: 'SEAT_EXPIRED' });
 
       if (room.table.solo) return ack({ ok: false, error: 'That is a private solo table' });
       const name = cleanName(payload?.name);

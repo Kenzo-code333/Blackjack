@@ -51,6 +51,12 @@ button {
 
 /* ---------- Buttons ---------- */
 
+.btn,
+.chip,
+.icon-btn {
+  touch-action: manipulation;
+}
+
 .btn {
   display: inline-flex;
   align-items: center;
@@ -663,6 +669,47 @@ h1 {
   background: radial-gradient(ellipse at 50% 40%, #12301f, var(--bg) 70%);
 }
 
+.help-body {
+  padding: 4px 16px 14px;
+  overflow-y: auto;
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+.help-body ul {
+  padding-left: 18px;
+  margin: 8px 0;
+}
+.help-body b {
+  color: var(--gold);
+}
+
+.offline {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  background: rgba(5, 6, 5, 0.6);
+  backdrop-filter: blur(3px);
+  font: 700 1.2rem var(--serif);
+}
+.spinner {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 3px solid rgba(227, 188, 95, 0.25);
+  border-top-color: var(--gold);
+  animation: spin 0.9s linear infinite;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 /* ---------- Toast ---------- */
 
 .toast {
@@ -928,9 +975,40 @@ h1 {
   .table-code {
     padding: 0 8px;
   }
+  .invite-word {
+    display: none;
+  }
+  .topbar .btn.invite {
+    padding: 0 0.6em;
+  }
 }
 
 @media (max-height: 500px) and (orientation: landscape) {
+  .wallet {
+    position: absolute;
+    left: 12px;
+    bottom: calc(10px + var(--safe-b));
+  }
+  .topbar {
+    padding-top: calc(6px + var(--safe-t));
+    padding-bottom: 4px;
+  }
+  .icon-btn {
+    width: 34px;
+    height: 34px;
+  }
+  .banner {
+    margin-top: 0;
+  }
+  .banner-text {
+    font-size: 1rem;
+  }
+  .timer {
+    margin-top: 4px;
+  }
+  .timer-text {
+    display: none !important;
+  }
   .controls {
     gap: 6px;
     padding-bottom: calc(8px + var(--safe-b));

@@ -92,6 +92,7 @@ export class Table3D implements TableRenderer {
   private lastTime = performance.now();
   private disposed = false;
   private low: boolean;
+  private readonly reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
   // Camera look-around.
   private yaw = 0;
@@ -791,7 +792,9 @@ export class Table3D implements TableRenderer {
     this.clock += dt;
 
     // Catch up if updates pile up (slow device, or the tab was in the background).
-    this.anim.timeScale = Math.min(8, 1 + Math.max(0, this.pending - 1) * 1.5);
+    // People who prefer reduced motion get quicker animations.
+    const base = this.reducedMotion ? 2 : 1;
+    this.anim.timeScale = Math.min(8, base + Math.max(0, this.pending - 1) * 1.5);
     this.anim.tick(dt);
     this.dealer.update(dt);
     for (const v of this.seats.values()) v.avatar?.update(dt);
@@ -821,7 +824,8 @@ export class Table3D implements TableRenderer {
     const dir = this.eye.clone().sub(this.look).setY(0).normalize();
     this.camera.position.copy(this.eye).addScaledVector(dir, back).add(sway);
     if (portrait) this.camera.position.y += 0.06;
-    this.camera.lookAt(this.look);
+    // In portrait the screen is tall: aim lower so the table fills it instead of the dark room.
+    this.camera.lookAt(portrait ? this.look.clone().setY(this.look.y - 0.28) : this.look);
     this.camera.rotateOnWorldAxis(new THREE.Vector3(0, 1, 0), -this.yaw);
     this.camera.rotateX(-this.pitch + Math.sin(t * 0.7) * 0.003);
   }

@@ -140,6 +140,21 @@ describe('socket server', () => {
     expect(state.players).toHaveLength(1);
   });
 
+  it('an automatic rejoin fails while the seat is open in another tab; a normal join makes a new player', async () => {
+    const tab1 = await client();
+    const created = await call<JoinResult>(tab1, 'room:create', { name: 'Alice' });
+    if (!created.ok) throw new Error('create failed');
+    const tab2 = await client();
+    const auto = await call(tab2, 'room:join', { code: created.code, name: '', token: created.token, rejoin: true });
+    expect(auto).toMatchObject({ ok: false, code: 'SEAT_IN_USE' });
+    const fresh = await call<JoinResult>(tab2, 'room:join', { code: created.code, name: 'Bob', token: created.token });
+    expect(fresh.ok && fresh.playerId).not.toBe(created.playerId);
+    expect(await call(tab2, 'room:join', { code: created.code, name: '', token: 'bogus', rejoin: true })).toMatchObject({
+      ok: false,
+      code: 'SEAT_EXPIRED',
+    });
+  });
+
   it('the seat is released after the grace period, and empty rooms close', async () => {
     const alice = await client();
     const bob = await client();
