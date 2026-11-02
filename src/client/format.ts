@@ -1,5 +1,5 @@
 import type { Card, Outcome } from '../game/index.js';
-import type { PublicPlayer, PublicState } from '../shared/protocol.js';
+import type { PokerState, PublicPlayer, PublicState } from '../shared/protocol.js';
 
 export const money = (n: number): string =>
   n.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 1 });
@@ -61,6 +61,37 @@ export function bannerText(state: PublicState, me: string | null): string {
       if (net > 0) return `You win ${signed(net)}`;
       if (net < 0) return `Dealer wins ${signed(net)}`;
       return 'Push · bet returned';
+    }
+  }
+}
+
+/** The headline at the top of the screen at a poker table. */
+export function pokerBanner(state: PokerState, me: string | null): string {
+  const mine = state.players.find((p) => p.id === me);
+  const seated = state.players.filter((p) => p.seat !== null);
+  const host = state.players.find((p) => p.isHost);
+  switch (state.phase) {
+    case 'waiting':
+      if (state.running) return 'Next hand…';
+      if (seated.length < 2) return mine?.isHost ? 'Add a bot or invite a friend to start' : 'Waiting for more players';
+      return mine?.isHost ? 'Press Start when everyone is seated' : `Waiting for ${host?.name ?? 'the host'} to start`;
+    case 'showdown':
+      return 'Showdown!';
+    case 'results': {
+      const w = state.winners[0];
+      if (!w) return 'Hand over';
+      const who = state.players.find((p) => p.id === w.playerId);
+      const how = w.handName ? ` with ${w.handName.toLowerCase()}` : '';
+      if (state.winners.length > 1) return `Split pot${how}`;
+      return w.playerId === me ? `You win ${money(w.amount)}${how}!` : `${who?.name ?? 'Someone'} wins ${money(w.amount)}${how}`;
+    }
+    default: {
+      const street = { preflop: 'Your two cards', flop: 'The flop', turn: 'The turn', river: 'The river' }[state.phase];
+      const t = state.turn;
+      if (!t) return street;
+      if (t.playerId === me) return t.canCheck ? 'Your turn: check or bet' : `Your turn: ${money(t.toCall)} to call`;
+      const p = state.players.find((x) => x.id === t.playerId);
+      return `${street} · ${p?.name ?? 'Player'} is thinking…`;
     }
   }
 }

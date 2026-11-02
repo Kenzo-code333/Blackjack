@@ -2,9 +2,11 @@
 // (2D or 3D) and never draws the table itself.
 
 import type { Action, Card } from '../game/index.js';
-import { CHIP_VALUES, type ChatMessage, type PublicPlayer, type PublicState } from '../shared/protocol.js';
+import { type AnyState, CHIP_VALUES, type ChatMessage, type GameKind, type PokerPlayer, type PokerState, type PublicPlayer, type PublicState } from '../shared/protocol.js';
 import { h, show, toast } from './dom.js';
-import { OUTCOME_TEXT, SUIT_SYMBOL, bannerText, isRed, money } from './format.js';
+import { OUTCOME_TEXT, SUIT_SYMBOL, bannerText, isRed, money, pokerBanner } from './format.js';
+import { PokerControls } from './hud-poker.js';
+import { rulesContent } from './rules.js';
 import type { Net } from './net.js';
 
 export interface SoundControls {
@@ -19,6 +21,8 @@ export interface SoundControls {
 }
 
 export interface HudOptions {
+  /** Which game this table plays: picks the controls and the rules shown in help. */
+  game: GameKind;
   onLeave: () => void;
   onToggleGraphics: () => boolean; // returns new low-graphics state
   lowGraphics: boolean;
@@ -36,10 +40,12 @@ const ACTION_KEYS: Record<string, Action> = { h: 'hit', s: 'stand', d: 'double',
 
 export class Hud {
   readonly el: HTMLElement;
-  private state: PublicState | null = null;
+  private state: AnyState | null = null;
+  private poker: PokerControls | null = null;
   private lastBet = 0;
   private lastPhase = '';
   private myCardsKey = '';
+  private celebratedHand = '';
   private celebrationTimer: ReturnType<typeof setTimeout> | undefined;
   private shownCards = new Set<string>();
   private unreadChat = 0;
@@ -179,7 +185,21 @@ export class Hud {
     );
 
     const wallet = h('div', { class: 'wallet' }, h('span', {}, 'Chips ', this.balanceEl), h('span', {}, 'Bet ', this.betEl));
-    const controls = h('footer', { class: 'controls' }, this.myCards, wallet, this.hostRow, this.insuranceRow, this.actionsRow, this.bettingRow, this.seatRow, this.brokeRow);
+    if (opts.game === 'poker') this.poker = new PokerControls(net, press);
+    const controls = h(
+      'footer',
+      { class: 'controls' },
+      this.poker ? this.poker.cards : this.myCards,
+      wallet,
+      this.hostRow,
+      this.poker?.raiseRow ?? null,
+      this.poker?.row ?? null,
+      this.insuranceRow,
+      this.actionsRow,
+      this.bettingRow,
+      this.seatRow,
+      this.brokeRow,
+    );
 
     // --- Side panels ---
     const chatForm = h(
@@ -226,27 +246,14 @@ export class Hud {
       h(
         'div',
         { class: 'help-body' },
-        h('p', {}, 'Get closer to 21 than the dealer without going over. Face cards count 10, aces 1 or 11.'),
+        rulesContent(opts.game),
         h(
-          'ul',
-          {},
-          h('li', {}, h('b', {}, 'Bet: '), 'tap the chips (or your chip stacks on the table), then ', h('b', {}, 'Deal'), '.'),
-          h('li', {}, h('b', {}, 'Hit'), ' (H) take a card · ', h('b', {}, 'Stand'), ' (S) keep your hand'),
-          h('li', {}, h('b', {}, 'Double'), ' (D) double the bet, take exactly one card'),
-          h('li', {}, h('b', {}, 'Split'), ' (P) a pair into two hands, up to 3 hands'),
-          h('li', {}, h('b', {}, 'Insurance'), ' when the dealer shows an ace: half your bet, pays 2 to 1'),
-          h('li', {}, 'You have 20 seconds per decision, then you stand automatically.'),
-          h(
-            'li',
-            {},
-            h('b', {}, 'Soft'),
-            ' hands have an ace counted as 11, so one more card can never bust you: the ace just drops to 1. Soft 12 is A + A; draw a 10 and it becomes a hard 12. ',
-            h('b', {}, 'Hard'),
-            ' hands have no ace counted as 11.',
-          ),
-          h('li', {}, 'Drag on the table to look around. Double-click (or double-tap) to look straight ahead.'),
+          'p',
+          { class: 'muted' },
+          opts.game === 'poker'
+            ? 'Keys: F fold · C check or call · R raise. Drag on the table to look around.'
+            : 'Keys: H hit · S stand · D double · P split. Drag on the table to look around; double-click to look straight ahead.',
         ),
-        h('p', { class: 'muted' }, '6 decks · Dealer stands on soft 17 · Blackjack pays 3 to 2 · Play money only.'),
       ),
     );
 
@@ -356,9 +363,13 @@ export class Hud {
   }
 
   private onKey = (e: KeyboardEvent) => {
-    if (e.target instanceof HTMLInputElement || e.metaKey || e.ctrlKey || e.altKey) return;
+    if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.metaKey || e.ctrlKey || e.altKey) return;
     const s = this.state;
     if (!s) return;
+    if (s.game === 'poker') {
+      if (this.poker?.key(e.key.toLowerCase())) e.preventDefault();
+      return;
+    }
     const action = ACTION_KEYS[e.key.toLowerCase()];
     if (action && s.turn?.playerId === this.net.me && s.turn.actions.includes(action)) {
       this.actionButtons.get(action)!.click();
@@ -380,7 +391,9 @@ export class Hud {
     this.statusDot.title = status === 'online' ? 'Connected' : status === 'offline' ? 'Disconnected, reconnecting…' : 'Connecting…';
   }
 
-  update(state: PublicState): void {
+  update(anyState: AnyState): void {
+    if (anyState.game === 'poker') return this.updatePoker(anyState);
+    const state = anyState;
     const me = state.players.find((p) => p.id === this.net.me);
     // Remember what we bet so "Rebet" can repeat it.
     if (this.lastPhase === 'betting' && state.phase !== 'betting' && me && me.bet > 0) this.lastBet = me.bet;
@@ -449,9 +462,43 @@ export class Hud {
     this.renderPlayers(state);
   }
 
-  private renderPlayers(state: PublicState): void {
+  /** Poker: the action buttons, your cards, and the host's Start / Add bot buttons. */
+  private updatePoker(state: PokerState): void {
+    this.state = state;
+    const me = state.players.find((p) => p.id === this.net.me);
+    this.banner.textContent = pokerBanner(state, this.net.me);
+    this.inviteBtn.hidden = !this.opts.invite;
+    this.balanceEl.textContent = me ? money(me.balance) : '–';
+    this.betEl.textContent = money(state.pot);
+    this.betEl.previousSibling!.textContent = 'Pot ';
+    for (const row of [this.bettingRow, this.actionsRow, this.insuranceRow, this.myCards]) row.hidden = true;
+    this.poker!.update(state);
+    const isHost = me?.isHost ?? false;
+    const seated = state.players.filter((p) => p.seat !== null);
+    const canStart = isHost && !state.running && state.phase === 'waiting';
+    const canAddBot = isHost && seated.length < 6;
+    show(this.hostRow, canStart || canAddBot);
+    this.hostBtn.hidden = !canStart;
+    this.hostBtn.textContent = 'Start the game';
+    this.hostBtn.className = 'btn gold big';
+    this.addBotBtn.hidden = !canAddBot;
+    const freeSeat = seated.length < 6;
+    show(this.seatRow, Boolean(me && me.seat === null && freeSeat));
+    show(this.brokeRow, Boolean(me && me.seat !== null && me.balance === 0 && !me.inHand));
+    // Your big win gets a celebration.
+    const myWin = state.phase === 'results' ? state.winners.find((w) => w.playerId === this.net.me) : undefined;
+    const key = `${state.round}`;
+    if (myWin && this.celebratedHand !== key) {
+      this.celebratedHand = key;
+      this.celebrateText('You win!', `${money(myWin.amount)} chips${myWin.handName ? ` · ${myWin.handName}` : ''}`, myWin.amount >= 200);
+      this.opts.play?.('chip');
+    }
+    this.renderPlayers(state);
+  }
+
+  private renderPlayers(state: AnyState): void {
     const amHost = state.hostId === this.net.me;
-    const row = (p: PublicPlayer) =>
+    const row = (p: PublicPlayer | PokerPlayer) =>
       h(
         'li',
         { class: p.connected ? '' : 'away' },
@@ -470,7 +517,7 @@ export class Hud {
             )
           : null,
       );
-    this.playersList.replaceChildren(...state.players.map(row));
+    this.playersList.replaceChildren(...(state.players as (PublicPlayer | PokerPlayer)[]).map(row));
   }
 
   addChat(msg: ChatMessage): void {
@@ -530,6 +577,11 @@ export class Hud {
       return;
     }
     const big = kind === 'blackjack';
+    this.celebrateText(big ? 'Blackjack!' : '21!', big ? 'Pays 3 to 2' : 'Twenty-one', big);
+  }
+
+  /** A gold banner in the middle of the screen; `big` adds confetti. */
+  private celebrateText(title: string, subtitle: string, big: boolean): void {
     const confetti = big
       ? Array.from({ length: 48 }, (_, i) =>
           h('i', {
@@ -547,7 +599,7 @@ export class Hud {
     this.celebration.className = `celebration show ${big ? 'blackjack' : 'twentyone'}`;
     this.celebration.replaceChildren(
       ...confetti,
-      h('div', { class: 'celebration-text' }, big ? 'Blackjack!' : '21!', h('small', {}, big ? 'Pays 3 to 2' : 'Twenty-one')),
+      h('div', { class: 'celebration-text' }, title, h('small', {}, subtitle)),
     );
     clearTimeout(this.celebrationTimer);
     this.celebrationTimer = setTimeout(() => (this.celebration.className = 'celebration'), big ? 3200 : 2000);
@@ -619,7 +671,8 @@ export class Hud {
   /** Smooth countdown bar, driven by the server's deadline. */
   private tickTimer = () => {
     const s = this.state;
-    if (s?.deadline && ['betting', 'insurance', 'playing'].includes(s.phase)) {
+    const timed = s?.game === 'poker' ? Boolean(s.turn) : Boolean(s && ['betting', 'insurance', 'playing'].includes(s.phase));
+    if (s?.deadline && timed) {
       const left = Math.max(0, s.deadline - this.net.now());
       this.timerBar.style.transform = `scaleX(${Math.min(1, left / (s.timerMs || 1))})`;
       this.timerBar.classList.toggle('urgent', left < 5000);

@@ -3,6 +3,7 @@ import { type Socket, io as connect } from 'socket.io-client';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { ChatMessage, ClientToServer, JoinResult, PublicState, ServerToClient } from '../shared/protocol.js';
 import { type GameServer, createGameServer } from './app.js';
+import type { Table } from './table.js';
 
 type Client = Socket<ServerToClient, ClientToServer>;
 type Res<T = object> = ({ ok: true } & T) | { ok: false; error: string };
@@ -31,7 +32,8 @@ async function client(): Promise<Client & { last: () => PublicState | undefined;
   clients.push(socket);
   let latest: PublicState | undefined;
   const waiters: { pred: (s: PublicState) => boolean; resolve: (s: PublicState) => void }[] = [];
-  socket.on('state', ({ state }) => {
+  socket.on('state', ({ state: anyState }) => {
+    const state = anyState as PublicState;
     latest = state;
     for (const w of [...waiters]) {
       if (w.pred(state)) {
@@ -111,7 +113,7 @@ describe('socket server', () => {
     await call(alice, 'bet:ready');
     const state = await alice.next((s) => s.phase !== 'betting' && s.phase !== 'dealing');
     if (state.dealer.revealed) return; // dealer blackjack: nothing to check this time
-    const hole = server.rooms.get(created.code)!.table.dealer[1]!;
+    const hole = (server.rooms.get(created.code)!.table as Table).dealer[1]!;
     expect(state.dealer.cards[1]).toBeNull();
     // Nothing sent so far mentions the hole card in a dealer deal event.
     for (const msg of raw) {
@@ -209,6 +211,43 @@ describe('socket server', () => {
     expect((await call(ana, 'player:look', { look: { skin: 5, hair: 0, hairColor: 0, outfit: 0, extra: 4 } })).ok).toBe(true);
     const updated = await ana.next((s) => s.players[0]!.look.skin === 5);
     expect(updated.players[0]!.look.extra).toBe(4);
+  });
+
+  it('poker: each player only ever receives their own hole cards', async () => {
+    const ana = await client();
+    const bob = await client();
+    const raw: Record<string, string[]> = { ana: [], bob: [] };
+    ana.onAny((_e, ...args) => raw.ana!.push(JSON.stringify(args)));
+    bob.onAny((_e, ...args) => raw.bob!.push(JSON.stringify(args)));
+    const created = await call<JoinResult>(ana, 'room:create', { name: 'Ana', game: 'poker' });
+    if (!created.ok) throw new Error('create failed');
+    const joined = await call<JoinResult>(bob, 'room:join', { code: created.code, name: 'Bob' });
+    if (!joined.ok) throw new Error('join failed');
+    expect((await call(ana, 'host:start')).ok).toBe(true);
+    await new Promise((r) => setTimeout(r, 1500));
+    const table = server.rooms.get(created.code)!.table as unknown as { players: Map<string, { hole: { rank: string; suit: string }[] }> };
+    const anaCards = table.players.get(created.playerId)!.hole;
+    const bobCards = table.players.get(joined.playerId)!.hole;
+    expect(anaCards).toHaveLength(2);
+    const holeOf = (msgs: string[], playerId: string) => {
+      for (const m of msgs) {
+        const st = JSON.parse(m)[0]?.state;
+        const p = st?.players?.find((x: { id: string }) => x.id === playerId);
+        if (p?.hole?.length) return p.hole;
+      }
+      return null;
+    };
+    // Each sees their own cards…
+    expect(holeOf(raw.ana!, created.playerId)).toEqual(anaCards);
+    expect(holeOf(raw.bob!, joined.playerId)).toEqual(bobCards);
+    // …and never the other's (not in state, not in deal events).
+    expect(holeOf(raw.ana!, joined.playerId)).toBeNull();
+    expect(holeOf(raw.bob!, created.playerId)).toBeNull();
+    const dealtTo = (msgs: string[], playerId: string) =>
+      msgs.flatMap((m) => (JSON.parse(m)[0]?.events ?? []).filter((e: { type: string; to: string; card: unknown }) => e.type === 'hole' && e.to === playerId && e.card));
+    expect(dealtTo(raw.ana!, joined.playerId)).toEqual([]);
+    expect(dealtTo(raw.bob!, created.playerId)).toEqual([]);
+    expect(dealtTo(raw.ana!, created.playerId)).toHaveLength(2);
   });
 
   it('a 6th player becomes a spectator; unknown codes are rejected', async () => {

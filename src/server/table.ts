@@ -769,11 +769,12 @@ export class Table {
 
   // ---------- What clients are allowed to see ----------
 
-  publicState(): PublicState {
+  publicState(_viewerId: string | null = null): PublicState {
     const turnPlayer = this.turn ? this.players.get(this.turn.playerId) : undefined;
     const turnHand = turnPlayer && this.turn ? turnPlayer.hands[this.turn.handIndex] : undefined;
     const visibleDealer = this.dealerRevealed ? this.dealer : this.dealer.slice(0, 1);
     return {
+      game: 'blackjack',
       code: this.code,
       solo: this.solo,
       phase: this.phase,

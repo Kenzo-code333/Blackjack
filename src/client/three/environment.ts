@@ -41,7 +41,8 @@ function tableShape(radius: number): THREE.Shape {
   return shape;
 }
 
-export function buildEnvironment(): Environment {
+/** The casino room around any table: floor, dim walls, distant lights, the lamp. */
+export function buildRoom(): { group: THREE.Group; extras: THREE.Object3D[]; lamp: THREE.SpotLight } {
   const group = new THREE.Group();
   const extras: THREE.Object3D[] = [];
 
@@ -137,6 +138,12 @@ export function buildEnvironment(): Environment {
   const fill = new THREE.PointLight(0xffd7a0, 3, 5, 2);
   fill.position.set(0, 1.9, 1.6);
   group.add(fill);
+
+  return { group, extras, lamp };
+}
+
+export function buildEnvironment(): Environment {
+  const { group, extras, lamp } = buildRoom();
 
   // --- Table ---
   const shape = tableShape(TABLE_RADIUS);

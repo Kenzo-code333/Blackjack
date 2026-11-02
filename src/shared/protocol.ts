@@ -83,7 +83,10 @@ export interface PublicPlayer {
   insurancePayout: number | null;
 }
 
+export type GameKind = 'blackjack' | 'poker';
+
 export interface PublicState {
+  game: 'blackjack';
   code: string;
   solo: boolean;
   phase: Phase;
@@ -119,9 +122,86 @@ export type TableEvent =
   | { type: 'settle' }
   | { type: 'clear' };
 
+// ---------- Texas Hold'em ----------
+
+export const POKER_SEATS = 6;
+export type PokerPhase = 'waiting' | 'preflop' | 'flop' | 'turn' | 'river' | 'showdown' | 'results';
+export type PokerAction = 'fold' | 'check' | 'call' | 'raise' | 'allin';
+
+export interface PokerPlayer {
+  id: string;
+  name: string;
+  seat: number | null;
+  bot: boolean;
+  look: Look;
+  /** Chips in front of the player (their stack). */
+  balance: number;
+  /** Chips put in during this betting round. */
+  bet: number;
+  /** Chips put in during the whole hand. */
+  total: number;
+  inHand: boolean;
+  folded: boolean;
+  allIn: boolean;
+  connected: boolean;
+  isHost: boolean;
+  /** "Check", "Call 20", "Raise to 60", "Fold", "All in". */
+  lastAction: string | null;
+  /** Your own cards always; other players' only at the showdown. */
+  hole: Card[] | null;
+  holeCount: number;
+  /** At the showdown: their best hand, and what they won. */
+  handName: string | null;
+  won: number;
+}
+
+export interface PokerState {
+  game: 'poker';
+  code: string;
+  solo: false;
+  phase: PokerPhase;
+  /** Hand number. */
+  round: number;
+  deadline: number | null;
+  timerMs: number | null;
+  serverTime: number;
+  hostId: string | null;
+  board: Card[];
+  /** All chips in the middle (pots plus this round's bets). */
+  pot: number;
+  blinds: { small: number; big: number };
+  buttonSeat: number | null;
+  smallBlindSeat: number | null;
+  bigBlindSeat: number | null;
+  currentBet: number;
+  players: PokerPlayer[];
+  /** Whose move it is, with what they're allowed to do. */
+  turn: { playerId: string; toCall: number; canCheck: boolean; minRaiseTo: number; maxRaiseTo: number } | null;
+  /** Hands keep coming one after another (the host pressed Start, or a bot table). */
+  running: boolean;
+  /** Winners of the last hand, for the results banner. */
+  winners: { playerId: string; amount: number; handName: string | null }[];
+  limits: { startingBalance: number };
+}
+
+export type PokerEvent =
+  | { type: 'shuffle' }
+  | { type: 'blinds'; small: string; big: string }
+  /** A hole card dealt; `card` is null for everyone except its owner. */
+  | { type: 'hole'; to: string; card: Card | null }
+  | { type: 'board'; cards: Card[]; street: 'flop' | 'turn' | 'river' }
+  | { type: 'pact'; playerId: string; action: PokerAction; amount: number }
+  /** End of a betting round: bets slide into the pot. */
+  | { type: 'collect' }
+  | { type: 'showdown' }
+  | { type: 'win'; playerId: string; amount: number }
+  | { type: 'clear' };
+
+export type AnyState = PublicState | PokerState;
+
 export interface StateMessage {
-  state: PublicState;
-  events: TableEvent[];
+  state: AnyState;
+  events: (TableEvent | PokerEvent)[];
 }
 
 export interface ChatMessage {
@@ -143,7 +223,7 @@ export interface JoinResult {
 
 export interface ClientToServer {
   /** `bots`: how many computer players to seat with you (0–4). */
-  'room:create': (p: { name: string; solo?: boolean; bots?: number; look?: Look }, ack: Ack<JoinResult>) => void;
+  'room:create': (p: { name: string; solo?: boolean; bots?: number; look?: Look; game?: GameKind }, ack: Ack<JoinResult>) => void;
   /** `rejoin`: automatic reconnect with a saved token; fails instead of creating a new player. */
   'room:join': (p: { code: string; name: string; token?: string; rejoin?: boolean; look?: Look }, ack: Ack<JoinResult>) => void;
   'player:look': (p: { look: Look }, ack: Ack) => void;
@@ -159,6 +239,8 @@ export interface ClientToServer {
   'host:start': (ack: Ack) => void;
   'host:kick': (p: { playerId: string }, ack: Ack) => void;
   'chat:send': (p: { text: string }, ack: Ack) => void;
+  /** Poker: fold, check, call, raise to `amount`, or go all in. */
+  'poker:act': (p: { action: PokerAction; amount?: number }, ack: Ack) => void;
 }
 
 export interface ServerToClient {

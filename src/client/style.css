@@ -1516,3 +1516,436 @@ h1 {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* =========================================================================
+   Casino screens: profile, lobby, rules
+   ========================================================================= */
+
+.casino-screen {
+  min-height: 100%;
+  padding: calc(18px + var(--safe-t)) max(16px, env(safe-area-inset-right, 0px)) calc(32px + var(--safe-b)) max(16px, env(safe-area-inset-left, 0px));
+  background:
+    radial-gradient(ellipse 70% 45% at 50% 0%, rgba(227, 188, 95, 0.16), transparent 70%),
+    radial-gradient(ellipse 90% 60% at 50% 110%, rgba(120, 20, 35, 0.35), transparent 70%),
+    repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.012) 0 2px, transparent 2px 14px),
+    #0c0a09;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 22px;
+  overflow-x: hidden;
+}
+
+.screen-title {
+  margin: 0;
+  font: 800 clamp(1.6rem, 4.5vw, 2.4rem) var(--serif);
+  color: var(--text);
+  text-wrap: balance;
+}
+.center {
+  text-align: center;
+}
+.tagline {
+  margin: 0;
+  color: var(--muted);
+  font-size: 1rem;
+}
+
+/* Marquee sign with chasing bulbs. */
+.marquee {
+  position: relative;
+  padding: 18px 34px 16px;
+  border-radius: 18px;
+  background: linear-gradient(180deg, #3a0f17, #200a0e);
+  border: 2px solid #c9a54a;
+  box-shadow: 0 0 0 6px #160709, 0 0 0 8px rgba(201, 165, 74, 0.5), 0 18px 50px rgba(0, 0, 0, 0.6);
+  text-align: center;
+  max-width: 100%;
+}
+.marquee .bulbs {
+  position: absolute;
+  inset: 5px;
+  border-radius: 14px;
+  pointer-events: none;
+  background:
+    radial-gradient(circle, #ffe6a3 0 2.5px, transparent 3.5px) 0 0 / 18px 18px repeat-x,
+    radial-gradient(circle, #ffe6a3 0 2.5px, transparent 3.5px) 0 100% / 18px 18px repeat-x;
+  animation: chase 1.2s steps(2) infinite;
+  opacity: 0.9;
+}
+@keyframes chase {
+  to {
+    background-position: 9px 0, 9px 100%;
+  }
+}
+.marquee-name {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  font: 800 clamp(1.8rem, 6vw, 3rem) / 1.1 var(--serif);
+  color: #f6d78a;
+  text-shadow: 0 0 18px rgba(246, 215, 138, 0.55), 0 2px 0 #6b4a12;
+  letter-spacing: 0.02em;
+}
+.marquee .suit {
+  font-size: 0.7em;
+  color: #f3eedf;
+}
+.marquee .suit.red {
+  color: #e2574c;
+}
+.marquee-sub {
+  margin-top: 4px;
+  font: 600 0.75rem var(--sans);
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: rgba(243, 238, 223, 0.7);
+}
+.marquee.small {
+  padding: 8px 22px 7px;
+  border-radius: 12px;
+}
+.marquee.small .marquee-name {
+  font-size: 1.3rem;
+  gap: 8px;
+}
+.marquee.small .bulbs {
+  inset: 3px;
+  background-size: 12px 12px;
+}
+
+/* Profile: the big avatar and the editor. */
+.profile {
+  width: min(960px, 100%);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr);
+  gap: 26px;
+  align-items: start;
+  padding: 24px;
+  border-radius: 22px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.55);
+}
+.profile-stage {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+.char-preview.big {
+  width: 100%;
+  max-width: 380px;
+  height: min(52vh, 420px);
+  border-radius: 18px;
+  background:
+    radial-gradient(ellipse 60% 40% at 50% 18%, rgba(255, 220, 150, 0.28), transparent 70%),
+    radial-gradient(ellipse at 50% 100%, rgba(20, 107, 69, 0.45), rgba(0, 0, 0, 0.5) 70%);
+}
+.profile-side {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+.profile-side > .field-label {
+  margin: 0 0 -6px 2px;
+}
+.btn.enter {
+  margin-top: 6px;
+  min-height: 58px;
+  font-size: 1.15rem;
+}
+
+/* Lobby. */
+.lobby-top {
+  width: min(1040px, 100%);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.profile-chip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 16px 6px 6px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: rgba(0, 0, 0, 0.45);
+  cursor: pointer;
+  text-align: left;
+}
+.profile-chip:hover {
+  border-color: var(--gold);
+}
+.char-preview.mini {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+}
+.chip-text {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.2;
+}
+.chip-text small {
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+.game-cards {
+  width: min(1040px, 100%);
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 22px;
+}
+.game-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 22px 22px 16px;
+  border-radius: 22px;
+  border: 2px solid rgba(201, 165, 74, 0.6);
+  box-shadow: inset 0 0 0 6px rgba(0, 0, 0, 0.18), 0 24px 60px rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+}
+.game-card.blackjack {
+  background: radial-gradient(ellipse at 50% 0%, #1b8455, #0d4a30 75%);
+}
+.game-card.poker {
+  background: radial-gradient(ellipse at 50% 0%, #1d4f86, #0f2846 75%);
+}
+.game-card h2 {
+  margin: 0;
+  font: 800 1.9rem var(--serif);
+  color: #f6d78a;
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
+}
+.game-card .tagline {
+  color: var(--text);
+  font-weight: 600;
+}
+.game-facts {
+  margin: 0;
+  font-size: 0.8rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(243, 238, 223, 0.7);
+}
+.game-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 6px;
+}
+.rules-link {
+  align-self: flex-start;
+  padding: 0;
+  color: #f6d78a;
+}
+.game-art {
+  position: relative;
+  height: 96px;
+  margin-bottom: 4px;
+}
+.art-card {
+  position: absolute;
+  top: 6px;
+  width: 58px;
+  height: 82px;
+  border-radius: 7px;
+  background: #fbf7ec;
+  color: #151515;
+  display: grid;
+  place-items: center;
+  font: 800 1.4rem/1 var(--serif);
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.45);
+}
+.art-card i {
+  font-style: normal;
+  display: block;
+  font-size: 1.1rem;
+}
+.art-card.red {
+  color: var(--red);
+}
+.art-card:nth-child(1) {
+  left: 6px;
+  transform: rotate(-10deg);
+}
+.art-card:nth-child(2) {
+  left: 46px;
+  transform: rotate(8deg);
+}
+.art-chip {
+  position: absolute;
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  bottom: 4px;
+  background:
+    radial-gradient(circle, var(--c) 0 50%, transparent 51%),
+    repeating-conic-gradient(#f4efe3 0 15deg, var(--c) 15deg 45deg);
+  box-shadow: 0 4px 0 rgba(0, 0, 0, 0.4);
+}
+.art-chip:nth-of-type(3) {
+  right: 58px;
+}
+.art-chip:nth-of-type(4) {
+  right: 14px;
+  bottom: 18px;
+}
+.art-chip.c5 {
+  --c: #c62f37;
+}
+.art-chip.c25 {
+  --c: #1f8a4c;
+}
+.art-chip.c100 {
+  --c: #262626;
+}
+.art-chip.c500 {
+  --c: #6b3fa0;
+}
+.friends {
+  width: min(560px, 100%);
+  padding: 18px 20px;
+  border-radius: 18px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.friends h2 {
+  margin: 0;
+  font: 700 1.2rem var(--serif);
+  color: var(--gold);
+}
+.friends p {
+  margin: 0;
+}
+.fine-print {
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+/* Rules. */
+.rules-screen .rules {
+  width: min(980px, 100%);
+}
+.rules {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 14px;
+}
+.rules-section {
+  padding: 16px 18px;
+  border-radius: 16px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  min-width: 0;
+}
+.rules-section h3 {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 8px;
+  font: 700 1.15rem var(--serif);
+  color: var(--gold);
+}
+.rules-emoji {
+  font-size: 1.5rem;
+}
+.rules-section ul {
+  margin: 0;
+  padding-left: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  line-height: 1.45;
+  font-size: 0.98rem;
+}
+.rules-section b {
+  color: #f6d78a;
+}
+.rules-cta {
+  margin-top: 6px;
+}
+.help-body .rules {
+  grid-template-columns: 1fr;
+  gap: 10px;
+}
+.help-body .rules-section {
+  padding: 10px 12px;
+}
+
+/* Poker controls. */
+.raise-box {
+  width: min(460px, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+}
+.raise-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.raise-top label {
+  color: var(--muted);
+}
+.raise-amount {
+  flex: 1;
+  font: 800 1.3rem var(--serif);
+  color: var(--gold);
+  font-variant-numeric: tabular-nums;
+}
+.raise-box input[type='range'] {
+  width: 100%;
+  accent-color: var(--gold);
+}
+.raise-quick {
+  display: flex;
+  gap: 6px;
+}
+.raise-quick .btn {
+  flex: 1;
+}
+.poker-actions .btn {
+  min-width: 96px;
+}
+
+@media (max-width: 760px) {
+  .profile {
+    grid-template-columns: 1fr;
+    padding: 16px;
+  }
+  .char-preview.big {
+    height: 280px;
+  }
+  .game-cards {
+    grid-template-columns: 1fr;
+  }
+  .lobby-top {
+    justify-content: center;
+  }
+  .poker-actions .btn {
+    min-width: 0;
+    flex: 1 1 40%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .marquee .bulbs {
+    animation: none;
+  }
+}

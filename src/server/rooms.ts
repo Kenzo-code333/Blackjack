@@ -1,8 +1,13 @@
 // Rooms: a table plus the people connected to it, chat, and lifetime timers.
 
 import { randomInt } from 'node:crypto';
-import type { ChatMessage, TableEvent } from '../shared/protocol.js';
+import type { ChatMessage, GameKind, PokerEvent, StateMessage, TableEvent } from '../shared/protocol.js';
+import { PokerTable, type PokerTiming } from './poker-table.js';
 import { Table, type TableTiming } from './table.js';
+
+/** A blackjack or a poker table: both offer the same seats, bots, host and chat methods. */
+export type GameTable = Table | PokerTable;
+export type AnyEvent = TableEvent | PokerEvent;
 
 // No 0/O or 1/I/L, so codes are easy to read out loud.
 const CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
@@ -14,6 +19,7 @@ export interface RoomSettings {
   /** How long a room with nobody connected stays open. */
   emptyRoomTtlMs: number;
   timing?: Partial<TableTiming>;
+  pokerTiming?: Partial<PokerTiming>;
 }
 
 export const DEFAULT_ROOM_SETTINGS: RoomSettings = {
@@ -22,7 +28,7 @@ export const DEFAULT_ROOM_SETTINGS: RoomSettings = {
 };
 
 export class Room {
-  readonly table: Table;
+  readonly table: GameTable;
   readonly chat: ChatMessage[] = [];
   /** playerId → socket id of their current connection. */
   readonly sockets = new Map<string, string>();
@@ -34,23 +40,27 @@ export class Room {
 
   constructor(
     readonly code: string,
-    kind: { solo: boolean; autoStart?: boolean },
+    kind: { solo: boolean; autoStart?: boolean; game?: GameKind },
     private readonly settings: RoomSettings,
-    onUpdate: (room: Room, events: TableEvent[]) => void,
+    onUpdate: (room: Room, events: AnyEvent[]) => void,
     private readonly onClose: (room: Room) => void,
   ) {
-    this.table = new Table({
-      code,
-      solo: kind.solo,
-      autoStart: kind.autoStart,
-      timing: settings.timing,
-      onUpdate: (events) => onUpdate(this, events),
-      onBotChat: (playerId, text) => {
-        const name = this.table.players.get(playerId)?.name ?? 'Player';
-        this.onChatMessage?.(this.addChat(playerId, name, text));
-      },
-    });
+    const onBotChat = (playerId: string, text: string) => {
+      const name = this.table.players.get(playerId)?.name ?? 'Player';
+      this.onChatMessage?.(this.addChat(playerId, name, text));
+    };
+    this.table =
+      kind.game === 'poker'
+        ? new PokerTable({ code, autoStart: kind.autoStart, timing: settings.pokerTiming, onUpdate: (events) => onUpdate(this, events), onBotChat })
+        : new Table({ code, solo: kind.solo, autoStart: kind.autoStart, timing: settings.timing, onUpdate: (events) => onUpdate(this, events), onBotChat });
     this.scheduleCloseIfEmpty();
+  }
+
+  /** The state and events one viewer may see (in poker: only their own hole cards). */
+  stateFor(viewerId: string | null, events: AnyEvent[]): StateMessage {
+    const t = this.table;
+    if (t instanceof PokerTable) return { state: t.publicState(viewerId), events: t.eventsFor(events as PokerEvent[], viewerId) };
+    return { state: t.publicState(viewerId), events };
   }
 
   attach(playerId: string, socketId: string): void {
@@ -122,15 +132,15 @@ export class RoomManager {
 
   constructor(
     private readonly settings: RoomSettings,
-    private readonly onUpdate: (room: Room, events: TableEvent[]) => void,
+    private readonly onUpdate: (room: Room, events: AnyEvent[]) => void,
   ) {}
 
-  create(solo: boolean, autoStart = false): Room {
+  create(solo: boolean, autoStart = false, game: GameKind = 'blackjack'): Room {
     let code: string;
     do {
       code = Array.from({ length: CODE_LENGTH }, () => CODE_ALPHABET[randomInt(CODE_ALPHABET.length)]).join('');
     } while (this.rooms.has(code));
-    const room = new Room(code, { solo, autoStart }, this.settings, this.onUpdate, (r) => this.rooms.delete(r.code));
+    const room = new Room(code, { solo: solo && game === 'blackjack', autoStart, game }, this.settings, this.onUpdate, (r) => this.rooms.delete(r.code));
     this.rooms.set(code, room);
     return room;
   }

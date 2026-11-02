@@ -7,12 +7,15 @@ import { fileURLToPath } from 'node:url';
 import express from 'express';
 import { Server, type Socket } from 'socket.io';
 import type { Action } from '../game/index.js';
-import { type Ack, type ClientToServer, type JoinResult, type ServerToClient, cleanLook } from '../shared/protocol.js';
+import { type Ack, type ClientToServer, type JoinResult, type PokerAction, type ServerToClient, cleanLook } from '../shared/protocol.js';
+import { PokerTable } from './poker-table.js';
+import { Table } from './table.js';
 import { DEFAULT_ROOM_SETTINGS, RateLimiter, type Room, RoomManager, type RoomSettings, cleanChat, cleanName, normalizeCode } from './rooms.js';
 
 type GameSocket = Socket<ClientToServer, ServerToClient, object, { code?: string; playerId?: string }>;
 
 const ACTIONS: readonly Action[] = ['hit', 'stand', 'double', 'split'];
+const POKER_ACTIONS: readonly PokerAction[] = ['fold', 'check', 'call', 'raise', 'allin'];
 
 export interface GameServer {
   http: HttpServer;
@@ -30,8 +33,9 @@ export function createGameServer(settings: Partial<RoomSettings> = {}): GameServ
     maxHttpBufferSize: 16_000,
   });
 
+  // Everyone at the table gets their own view (in poker, only their own hole cards).
   const rooms = new RoomManager({ ...DEFAULT_ROOM_SETTINGS, ...settings }, (room, events) => {
-    io.to(room.code).emit('state', { state: room.table.publicState(), events });
+    for (const [playerId, socketId] of room.sockets) io.sockets.sockets.get(socketId)?.emit('state', room.stateFor(playerId, events));
   });
 
   app.get('/health', (_req, res) => {
@@ -95,7 +99,7 @@ export function createGameServer(settings: Partial<RoomSettings> = {}): GameServ
       void socket.join(room.code);
       room.attach(playerId, socket.id);
       ack({ ok: true, code: room.code, playerId, token: player.token });
-      socket.emit('state', { state: room.table.publicState(), events: [] });
+      socket.emit('state', room.stateFor(playerId, []));
       socket.emit('chat:history', room.chat);
     };
 
@@ -115,8 +119,9 @@ export function createGameServer(settings: Partial<RoomSettings> = {}): GameServ
       if (typeof ack !== 'function') return;
       const name = cleanName(payload?.name);
       if (!name) return ack({ ok: false, error: 'Please enter a name' });
-      const bots = Math.max(0, Math.min(4, Math.floor(Number(payload?.bots) || 0)));
-      const room = rooms.create(Boolean(payload?.solo), bots > 0);
+      const game = payload?.game === 'poker' ? 'poker' : 'blackjack';
+      const bots = Math.max(0, Math.min(game === 'poker' ? 5 : 4, Math.floor(Number(payload?.bots) || 0)));
+      const room = rooms.create(Boolean(payload?.solo), bots > 0, game);
       wireSystemChat(room);
       const player = room.table.addPlayer(name, cleanLook(payload?.look));
       for (let i = 0; i < bots; i++) room.table.addBot(player.id);
@@ -159,22 +164,32 @@ export function createGameServer(settings: Partial<RoomSettings> = {}): GameServ
       ctx.room.remove(ctx.playerId);
     });
 
+    /** Blackjack-only moves; a poker table answers with an error. */
+    const onBj = (room: Room, fn: (t: Table) => string | null) => (room.table instanceof Table ? fn(room.table) : 'Not a blackjack table');
     socket.on('seat:take', handle(({ room, playerId }) => room.table.takeSeat(playerId)));
     socket.on(
       'bet:add',
-      handle(({ room, playerId }, p: { amount: number }) => room.table.addBet(playerId, Number(p?.amount))),
+      handle(({ room, playerId }, p: { amount: number }) => onBj(room, (t) => t.addBet(playerId, Number(p?.amount)))),
     );
-    socket.on('bet:clear', handle(({ room, playerId }) => room.table.clearBet(playerId)));
-    socket.on('bet:ready', handle(({ room, playerId }) => room.table.setReady(playerId)));
+    socket.on('bet:clear', handle(({ room, playerId }) => onBj(room, (t) => t.clearBet(playerId))));
+    socket.on('bet:ready', handle(({ room, playerId }) => onBj(room, (t) => t.setReady(playerId))));
     socket.on(
       'insurance',
-      handle(({ room, playerId }, p: { take: boolean }) => room.table.takeInsurance(playerId, p?.take === true)),
+      handle(({ room, playerId }, p: { take: boolean }) => onBj(room, (t) => t.takeInsurance(playerId, p?.take === true))),
     );
     socket.on(
       'action',
       handle(({ room, playerId }, p: { action: Action }) => {
         if (!ACTIONS.includes(p?.action)) return 'Unknown action';
-        return room.table.act(playerId, p.action);
+        return onBj(room, (t) => t.act(playerId, p.action));
+      }),
+    );
+    socket.on(
+      'poker:act',
+      handle(({ room, playerId }, p: { action: PokerAction; amount?: number }) => {
+        if (!(room.table instanceof PokerTable)) return 'Not a poker table';
+        if (!POKER_ACTIONS.includes(p?.action)) return 'Unknown action';
+        return room.table.act(playerId, p.action, Number(p?.amount) || 0);
       }),
     );
     socket.on(

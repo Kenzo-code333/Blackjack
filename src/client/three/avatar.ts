@@ -22,13 +22,14 @@ export class Avatar {
   private clock = 0;
   private gesture: { kind: Gesture; start: number } | null = null;
 
-  constructor(angle: number, look: Look) {
+  /** `place` overrides the blackjack seat position (used at the poker table). */
+  constructor(angle: number, look: Look, place?: { position: THREE.Vector3; rotationY: number }) {
     this.setLook(look);
     this.group.add(this.tag, this.bubble);
     this.bubble.visible = false;
     // The figure is modeled facing +z; turn it to face the table center.
-    this.group.position.copy(onArc(angle, R_AVATAR, 0));
-    this.group.rotation.y = angle + Math.PI;
+    this.group.position.copy(place?.position ?? onArc(angle, R_AVATAR, 0));
+    this.group.rotation.y = place?.rotationY ?? angle + Math.PI;
   }
 
   /** Rebuilds the figure when the player's look changes. */

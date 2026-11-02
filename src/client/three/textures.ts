@@ -576,3 +576,26 @@ export class LabelSprite extends THREE.Sprite {
     this.tex.needsUpdate = true;
   }
 }
+
+/** A green felt canvas (gradient + fine fibres); `draw` adds the printing on top. */
+export function feltTextureFrom(W: number, H: number, draw: (ctx: CanvasRenderingContext2D) => void): THREE.CanvasTexture {
+  const [c, ctx] = canvas(W, H);
+  const g = ctx.createRadialGradient(W / 2, H / 2, 40, W / 2, H / 2, W * 0.6);
+  g.addColorStop(0, '#1b8455');
+  g.addColorStop(0.6, '#136a43');
+  g.addColorStop(1, '#0b4a2e');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, W, H);
+  const [n, nctx] = canvas(128, 128);
+  const img = nctx.createImageData(128, 128);
+  for (let i = 0; i < img.data.length; i += 4) {
+    const v = Math.random() * 255;
+    img.data[i] = img.data[i + 1] = img.data[i + 2] = v;
+    img.data[i + 3] = 18;
+  }
+  nctx.putImageData(img, 0, 0);
+  ctx.fillStyle = ctx.createPattern(n, 'repeat')!;
+  ctx.fillRect(0, 0, W, H);
+  draw(ctx);
+  return toTexture(c);
+}

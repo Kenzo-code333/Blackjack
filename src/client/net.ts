@@ -3,7 +3,7 @@
 
 import { type Socket, io } from 'socket.io-client';
 import type { Action } from '../game/index.js';
-import type { ChatMessage, ClientToServer, JoinResult, Look, PublicState, ServerToClient, TableEvent } from '../shared/protocol.js';
+import type { AnyState, ChatMessage, ClientToServer, GameKind, JoinResult, Look, PokerAction, PokerEvent, ServerToClient, TableEvent } from '../shared/protocol.js';
 import { prefs, store } from './storage.js';
 
 type Res<T = object> = ({ ok: true } & T) | { ok: false; error: string; code?: string };
@@ -44,12 +44,12 @@ export type ConnectionStatus = 'connecting' | 'online' | 'offline';
 export class Net {
   readonly socket: Socket<ServerToClient, ClientToServer>;
   session: Session | null = null;
-  state: PublicState | null = null;
+  state: AnyState | null = null;
   /** Difference between the server clock and ours, for countdowns. */
   clockOffset = 0;
   status: ConnectionStatus = 'connecting';
 
-  onState: (state: PublicState, events: TableEvent[]) => void = () => {};
+  onState: (state: AnyState, events: (TableEvent | PokerEvent)[]) => void = () => {};
   onChat: (msg: ChatMessage) => void = () => {};
   onChatHistory: (msgs: ChatMessage[]) => void = () => {};
   onKicked: () => void = () => {};
@@ -128,7 +128,7 @@ export class Net {
   }
 
   /** `bots`: computer players to seat with you. */
-  async create(name: string, opts: { solo?: boolean; bots?: number } = {}) {
+  async create(name: string, opts: { solo?: boolean; bots?: number; game?: GameKind } = {}) {
     return this.enter(await this.request<JoinResult>('room:create', { name, ...opts, look: prefs.look }));
   }
 
@@ -139,6 +139,7 @@ export class Net {
 
   setLook = (look: Look) => this.request('player:look', { look });
   addBot = () => this.request('host:addBot');
+  pokerAct = (action: PokerAction, amount?: number) => this.request('poker:act', { action, amount });
 
   /** Take back a saved seat without creating a new player. */
   async rejoin(code: string) {

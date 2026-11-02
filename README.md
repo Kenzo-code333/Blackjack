@@ -1,25 +1,21 @@
-# Blackjack
+# The Velvet Ace: Blackjack & Texas Hold'em
 
-A multiplayer blackjack table in your browser, seen in first person from your seat.
-A robot dealer deals from a 6-deck shoe. Play solo, or create a table and send the
-link to friends: they type a name and sit down. No accounts, no installs, play money only.
+A multiplayer casino in your browser, seen in first person from your seat. Make your avatar,
+pick a table nickname, then choose **Blackjack** (you against the dealer) or **Texas Hold'em
+poker** (you against the other players). Play alone, with bots, or with friends who just
+open a link. No accounts, no installs, play money only.
 
-- **3D first-person table**: felt, padded rail, warm lamp, animated dealer, cards and chips
-- **Up to 5 players per table**, plus spectators when it's full
-- **Server-authoritative rules**: the server deals, checks every move and pays out.
-  Browsers never see the hole card or the shoe order early.
-- **Play with bots**: 1–4 computer players who play basic strategy and chat back
-- **Your own character**: pick skin, hair style and colour, outfit and accessories; the
-  dealer and everyone at the table are people, with speech bubbles when they chat
-- **Always-readable cards**: your hands and the dealer's cards also appear as big cards in a corner panel
-- **Music and sound**: a generated lounge-jazz trio, casino effects synthesized from physical models
-  (paper on felt, clay chips, a real riffle shuffle, crowd), stereo by seat, and a dealer who speaks
-- **Big moments**: hitting 21 or a blackjack sets off sparkles, confetti and applause
-- **Real casino habits**: burn card after the shuffle, the dealer's callouts and hand gestures,
-  players' hand signals (tap to hit, wave to stand), even money, a table limits sign
-- **Works on phones**, with a low-graphics mode and a 2D fallback for devices without 3D
+- **Your avatar and nickname** first, then the **casino floor** to choose a game
+- **Blackjack**: 6-deck shoe, dealer stands on soft 17, blackjack pays 3 to 2, up to 5 players
+- **Texas Hold'em**: no-limit, blinds 5/10, up to 6 players, side pots, showdowns, bots that bet and bluff
+- **How to play** pages for both games in short, very simple bullet points (also in-game under "?")
+- **3D first-person tables** with a human dealer, people around the table, chips and cards
+- **Bots** for both games; **online tables** with a code, a ready-to-send link and a QR code
+- **Server-authoritative**: the server (or the host's page) deals and checks every move.
+  At poker, each player only ever receives their own two cards.
+- **Music and sound**, celebrations for 21, blackjack and big pots, phone-friendly controls
 
-## Table rules
+## Blackjack rules
 
 - 6-deck shoe, cut card at ~75%. The shoe is reshuffled after the round in which the cut card comes out.
 - Dealer stands on soft 17 and peeks for blackjack with an ace or ten showing.
@@ -30,6 +26,17 @@ link to friends: they type a name and sit down. No accounts, no installs, play m
 - 15 s betting countdown, 20 s per decision (then you stand automatically).
 
 To change a rule, edit `DEFAULT_RULES` in `src/game/rules.ts` or `DEFAULT_TIMING` in `src/server/table.ts`.
+
+## Texas Hold'em rules
+
+- No-limit Hold'em, blinds 5 and 10, everyone starts with 1,000 chips. Up to 6 seats.
+- The dealer button moves one seat each hand; with two players, the button posts the small blind.
+- Four betting rounds: before the flop, after the flop (3 cards), the turn (1) and the river (1).
+- Fold, check, call, bet/raise (at least the last raise) or go all in. 25 seconds per move:
+  you check if you can, otherwise fold.
+- Best 5 of 7 cards wins; ties split the pot; all-ins for less make side pots.
+
+The poker engine is `src/game/poker.ts` (hands and pots) and `src/server/poker-table.ts` (the table).
 
 ---
 

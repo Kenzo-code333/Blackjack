@@ -4,7 +4,9 @@
 // online table) friends whose messages arrive through the artifact's live room.
 
 import type { Action } from '../../game/index.js';
-import { type ChatMessage, type StateMessage, cleanLook } from '../../shared/protocol.js';
+import { type ChatMessage, type PokerAction, cleanLook } from '../../shared/protocol.js';
+import { PokerTable } from '../../server/poker-table.js';
+import { Table } from '../../server/table.js';
 import { DEFAULT_ROOM_SETTINGS, RateLimiter, type Room, RoomManager, cleanChat, cleanName, normalizeCode } from '../../server/rooms.js';
 
 export interface Connection {
@@ -17,11 +19,13 @@ export interface Connection {
 type Result = { ok: true; [k: string]: unknown } | { ok: false; error: string; code?: string };
 
 const ACTIONS: readonly Action[] = ['hit', 'stand', 'double', 'split'];
+const POKER_ACTIONS: readonly PokerAction[] = ['fold', 'check', 'call', 'raise', 'allin'];
 
 export class PageServer {
   private readonly conns = new Map<string, { conn: Connection; code?: string; playerId?: string; chat: RateLimiter }>();
   readonly rooms = new RoomManager(DEFAULT_ROOM_SETTINGS, (room, events) => {
-    this.broadcast(room, 'state', { state: room.table.publicState(), events } satisfies StateMessage);
+    // Each connection gets its own view (in poker, only its own hole cards).
+    for (const c of this.conns.values()) if (c.code === room.code) c.conn.deliver('state', room.stateFor(c.playerId ?? null, events));
   });
   /** Called once per broadcast that has remote listeners (the online host sends it to the room). */
   onRemoteBroadcast: ((code: string, event: string, args: unknown[]) => void) | null = null;
@@ -65,7 +69,7 @@ export class PageServer {
     c.playerId = playerId;
     room.onChatMessage ??= (msg) => this.broadcast(room, 'chat', msg);
     room.attach(playerId, connId);
-    c.conn.deliver('state', { state: room.table.publicState(), events: [] });
+    c.conn.deliver('state', room.stateFor(playerId, []));
     c.conn.deliver('chat:history', room.chat);
     return { ok: true, code: room.code, playerId, token: room.table.players.get(playerId)!.token };
   }
@@ -83,8 +87,9 @@ export class PageServer {
       const name = cleanName(p.name);
       if (!name) return { ok: false, error: 'Please enter a name' };
       if (c.code && c.playerId) this.rooms.get(c.code)?.remove(c.playerId);
-      const bots = Math.max(0, Math.min(4, Math.floor(Number(p.bots) || 0)));
-      const room = this.rooms.create(p.solo === true, bots > 0);
+      const game = p.game === 'poker' ? 'poker' : 'blackjack';
+      const bots = Math.max(0, Math.min(game === 'poker' ? 5 : 4, Math.floor(Number(p.bots) || 0)));
+      const room = this.rooms.create(p.solo === true, bots > 0, game);
       const player = room.table.addPlayer(name, cleanLook(p.look));
       for (let i = 0; i < bots; i++) room.table.addBot(player.id);
       return this.enter(connId, room, player.id);
@@ -112,6 +117,8 @@ export class PageServer {
     const me = c.playerId;
     if (!room || !me || !room.table.players.has(me)) return { ok: false, error: 'You are not at a table' };
     const table = room.table;
+    const bj = table instanceof Table ? table : null;
+    const notBj = { ok: false as const, error: 'Not a blackjack table' };
     switch (event) {
       case 'room:leave':
         c.code = c.playerId = undefined;
@@ -120,16 +127,20 @@ export class PageServer {
       case 'seat:take':
         return this.result(table.takeSeat(me));
       case 'bet:add':
-        return this.result(table.addBet(me, Number(p.amount)));
+        return bj ? this.result(bj.addBet(me, Number(p.amount))) : notBj;
       case 'bet:clear':
-        return this.result(table.clearBet(me));
+        return bj ? this.result(bj.clearBet(me)) : notBj;
       case 'bet:ready':
-        return this.result(table.setReady(me));
+        return bj ? this.result(bj.setReady(me)) : notBj;
       case 'insurance':
-        return this.result(table.takeInsurance(me, p.take === true));
+        return bj ? this.result(bj.takeInsurance(me, p.take === true)) : notBj;
       case 'action':
         if (!ACTIONS.includes(p.action as Action)) return { ok: false, error: 'Unknown action' };
-        return this.result(table.act(me, p.action as Action));
+        return bj ? this.result(bj.act(me, p.action as Action)) : notBj;
+      case 'poker:act':
+        if (!(table instanceof PokerTable)) return { ok: false, error: 'Not a poker table' };
+        if (!POKER_ACTIONS.includes(p.action as PokerAction)) return { ok: false, error: 'Unknown action' };
+        return this.result(table.act(me, p.action as PokerAction, Number(p.amount) || 0));
       case 'chips:reset':
         return this.result(table.resetChips(me));
       case 'player:look':

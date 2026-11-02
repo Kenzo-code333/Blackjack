@@ -1,6 +1,7 @@
 // App entry: picks a screen from the URL and wires the table view together.
-//   /                → home screen
-//   /character       → character editor
+//   /                → your avatar and table nickname
+//   /lobby           → the casino floor: choose Blackjack or Texas Hold'em
+//   /rules/<game>    → how to play
 //   /table/ABC123    → join (or rejoin) that table
 
 import './style.css';
@@ -9,8 +10,9 @@ import { h, toast } from './dom.js';
 import { Hud } from './hud.js';
 import { Net, forgetSession, savedSession } from './net.js';
 import type { PreviewApi } from './preview/install.js';
+import type { AnyState, GameKind } from '../shared/protocol.js';
 import type { TableRenderer } from './renderer.js';
-import { type OpenTableInfo, characterScreen, homeScreen, joinScreen } from './screens.js';
+import { CASINO_NAME, type OpenTableInfo, joinScreen, lobbyScreen, profileScreen, rulesScreen } from './screens.js';
 import { prefs, store } from './storage.js';
 import { Table2D } from './table2d.js';
 
@@ -49,6 +51,7 @@ function mount(el: HTMLElement, dispose?: () => void): void {
   teardown?.();
   teardown = dispose ?? null;
   app.replaceChildren(el);
+  window.scrollTo(0, 0);
 }
 
 function go(path: string): void {
@@ -121,8 +124,10 @@ function route(): void {
   const code = tableCodeFromUrl();
   if (!code) {
     leaveTable();
-    if (currentPath === '/character') showCharacter();
-    else showHome();
+    const rules = currentPath.match(/^\/rules\/(blackjack|poker)$/)?.[1] as GameKind | undefined;
+    if (rules) showRules(rules);
+    else if (currentPath === '/lobby' && prefs.name) showLobby();
+    else showProfile();
     return;
   }
   if (net.session?.code === code) {
@@ -150,18 +155,29 @@ async function openTable(res: Awaited<ReturnType<Net['create']>>): Promise<void>
   else toast(res.error, 'error');
 }
 
-function showHome(): void {
-  document.title = 'Blackjack';
-  const screen = homeScreen({
+const GAME_TITLE: Record<GameKind, string> = { blackjack: 'Blackjack', poker: 'Texas Hold’em' };
+
+/** The home page: your avatar and table nickname. */
+function showProfile(): void {
+  document.title = `${CASINO_NAME} · Blackjack & Poker`;
+  const screen = profileScreen(() => go('/lobby'));
+  mount(screen.el, screen.dispose);
+}
+
+/** The casino floor: choose a game. */
+function showLobby(): void {
+  document.title = `${CASINO_NAME} · Choose your table`;
+  const name = () => prefs.name || 'Player';
+  const screen = lobbyScreen({
     preview: PREVIEW,
     listsTables: preview?.listsTables ?? false,
-    solo: async (name) => openTable(await net.create(name, { solo: true })),
-    bots: async (name, count) => openTable(await net.create(name, { bots: count })),
-    create: async (name) => {
-      const res = await net.create(name);
+    solo: async () => openTable(await net.create(name(), { solo: true })),
+    bots: async (game, count) => openTable(await net.create(name(), { bots: count, game })),
+    create: async (game) => {
+      const res = await net.create(name(), { game });
       if (res.ok && preview) {
         try {
-          await preview.host(res.code, name);
+          await preview.host(res.code, name());
           onlineCode = res.code;
         } catch {
           net.leave();
@@ -173,7 +189,7 @@ function showHome(): void {
       await openTable(res);
     },
     join: (code) => go(PREVIEW ? `/invite/${code}` : `/table/${code}`),
-    joinOpen: async (name, table: OpenTableInfo) => {
+    joinOpen: async (table: OpenTableInfo) => {
       if (!preview) return;
       try {
         await preview.joinRemote(table);
@@ -182,7 +198,7 @@ function showHome(): void {
         preview.useLocal();
         return;
       }
-      const res = await net.join(table.code, name);
+      const res = await net.join(table.code, name());
       if (res.ok) {
         onlineCode = res.code;
         go(`/table/${res.code}`);
@@ -207,26 +223,36 @@ function showHome(): void {
           };
         }
       : undefined,
-    customize: () => go('/character'),
+    rules: (game) => go(`/rules/${game}`),
+    editProfile: () => go('/'),
   });
   mount(screen.el, screen.dispose);
 }
 
-function showCharacter(): void {
-  document.title = 'Your character · Blackjack';
-  const screen = characterScreen(() => go('/'));
-  mount(screen.el, screen.dispose);
+function showRules(game: GameKind): void {
+  document.title = `How to play ${GAME_TITLE[game]} · ${CASINO_NAME}`;
+  mount(
+    rulesScreen(
+      game,
+      () => go('/lobby'),
+      async () => {
+        if (!prefs.name) return go('/');
+        await openTable(await net.create(prefs.name, game === 'poker' ? { game, bots: 4 } : { solo: true }));
+      },
+    ),
+  );
+  window.scrollTo(0, 0);
 }
 
-/** Preview: someone opened an invite link (or typed a code). */
+/** Single-page builds: someone opened an invite link (or typed a code). */
 function showOnlineJoin(code: string): void {
-  document.title = `Join table ${code} · Blackjack`;
-  const screen = joinScreen(code, (name) => joinOnline(code, name), () => go('/'));
+  document.title = `Join table ${code} · ${CASINO_NAME}`;
+  const screen = joinScreen(code, (name) => joinOnline(code, name), () => go('/lobby'));
   mount(screen.el, screen.dispose);
 }
 
 function showJoin(code: string): void {
-  document.title = `Join table ${code} · Blackjack`;
+  document.title = `Join table ${code} · ${CASINO_NAME}`;
   const screen = joinScreen(
     code,
     async (name) => {
@@ -234,9 +260,22 @@ function showJoin(code: string): void {
       if (res.ok) showTable();
       else toast(res.error, 'error');
     },
-    () => go('/'),
+    () => go('/lobby'),
   );
   mount(screen.el, screen.dispose);
+}
+
+/** Resolves with the table's state (it arrives right after joining). */
+function firstState(): Promise<AnyState> {
+  if (net.state) return Promise.resolve(net.state);
+  return new Promise((resolve) => {
+    const prev = net.onState;
+    net.onState = (state, events) => {
+      net.onState = prev;
+      prev(state, events);
+      resolve(state);
+    };
+  });
 }
 
 /** What to send friends so they can join this table, or null if it can't be joined. */
@@ -250,7 +289,16 @@ function inviteFor(code: string): { link: string; note: string } | null {
 
 function showTable(): void {
   const code = net.session!.code;
-  document.title = `Table ${code} · Blackjack`;
+  const session = net.session;
+  const loadingView = h('div', { class: 'table-view' }, h('div', { class: 'loading' }, 'Finding your seat…'));
+  mount(loadingView);
+  void firstState().then((state) => {
+    if (net.session === session) showTableFor(code, state.game);
+  });
+}
+
+function showTableFor(code: string, game: GameKind): void {
+  document.title = `${GAME_TITLE[game]} · Table ${code} · ${CASINO_NAME}`;
   const stage = h('div', { class: 'stage' });
   const loading = h('div', { class: 'loading' }, 'Setting up the table…');
   const view = h('div', { class: 'table-view' }, stage, loading);
@@ -261,6 +309,7 @@ function showTable(): void {
   let disposed = false;
 
   const hud = new Hud(net, {
+    game,
     lowGraphics: low,
     sound: {
       get muted() {
@@ -292,7 +341,7 @@ function showTable(): void {
         sound.setSfxVolume(v);
       },
     },
-    onLeave: () => go('/'),
+    onLeave: () => go('/lobby'),
     onToggleGraphics: () => {
       low = !low;
       prefs.lowGraphics = low;
@@ -320,7 +369,19 @@ function showTable(): void {
       const { Table3D, webglAvailable } = await import('./three/scene3d.js');
       if (disposed) return;
       if (!webglAvailable()) throw new Error('WebGL not available');
-      renderer = new Table3D(stage, {
+      if (game === 'poker') {
+        const { PokerScene3D } = await import('./three/poker-scene.js');
+        if (disposed) return;
+        renderer = new PokerScene3D(stage, {
+          sound,
+          low,
+          onAutoLow: () => {
+            low = true;
+            hud.setLowGraphics(true);
+            toast('Switched to low graphics for smoother play');
+          },
+        });
+      } else renderer = new Table3D(stage, {
         sound,
         low,
         onChipClick: bet,
@@ -334,6 +395,10 @@ function showTable(): void {
     } catch (err) {
       console.warn('3D unavailable, using the 2D table', err);
       if (disposed) return;
+      if (game === 'poker') {
+        toast('This device can’t show the 3D poker table.', 'error');
+        return;
+      }
       renderer = new Table2D(stage);
     }
     loading.remove();
@@ -360,12 +425,12 @@ function showTable(): void {
   net.onStatus = (s) => hud.setConnection(s);
   net.onKicked = () => {
     toast('The host removed you from the table', 'error');
-    go('/');
+    go('/lobby');
   };
   net.onLost = (error) => {
     toast(error, 'error');
     net.session = null;
-    go('/');
+    go('/lobby');
   };
   hud.setConnection(net.status);
   if (net.state) hud.update(net.state);

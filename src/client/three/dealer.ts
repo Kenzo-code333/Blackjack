@@ -83,14 +83,21 @@ export class Dealer {
   private blinkTimer = 2;
   private time = 0;
 
-  constructor(private readonly anim: Animator) {
+  /** Where the dealer stands (feet), facing +z toward the players. */
+  private readonly base: THREE.Vector3;
+
+  constructor(
+    private readonly anim: Animator,
+    position: THREE.Vector3 = DEALER_POS,
+  ) {
+    this.base = position.clone();
     const shirt = new THREE.MeshStandardMaterial({ color: 0xf1ede4, roughness: 0.7 });
     const vest = new THREE.MeshStandardMaterial({ color: 0x5b1420, roughness: 0.55 });
     const dark = new THREE.MeshStandardMaterial({ color: 0x15171b, roughness: 0.35, metalness: 0.4 });
     const skin = new THREE.MeshStandardMaterial({ color: skinColor(DEALER_LOOK), roughness: 0.62 });
     const gold = new THREE.MeshStandardMaterial({ color: 0xd2a94a, metalness: 0.8, roughness: 0.3 });
 
-    this.group.position.copy(DEALER_POS);
+    this.group.position.copy(this.base);
     this.group.scale.setScalar(0.93);
 
     // Hips and legs (mostly hidden by the table).
@@ -151,8 +158,8 @@ export class Dealer {
       left: new Arm('left', shirt, skin, this.limbs),
       right: new Arm('right', shirt, skin, this.limbs),
     };
-    this.arms.left.rest.set(0.17, TABLE_Y + 0.04, DEALER_POS.z + 0.36);
-    this.arms.right.rest.set(-0.17, TABLE_Y + 0.04, DEALER_POS.z + 0.36);
+    this.arms.left.rest.set(this.base.x + 0.17, TABLE_Y + 0.04, this.base.z + 0.36);
+    this.arms.right.rest.set(this.base.x - 0.17, TABLE_Y + 0.04, this.base.z + 0.36);
     for (const arm of Object.values(this.arms)) {
       arm.current.copy(arm.rest);
       arm.target.copy(arm.rest);
@@ -165,14 +172,14 @@ export class Dealer {
     const from = arm.target.clone();
     const to = point.clone();
     // Lean in toward far targets.
-    this.leanTarget = THREE.MathUtils.clamp((to.z - (DEALER_POS.z + 0.35)) * 0.55, 0, 0.35);
+    this.leanTarget = THREE.MathUtils.clamp((to.z - (this.base.z + 0.35)) * 0.55, 0, 0.35);
     await this.anim.tween(duration, (k) => arm.target.lerpVectors(from, to, k), ease.inOutCubic);
   }
 
   /** Hand follows a moving point (e.g. while sliding a card) until `release()` is called. */
   follow(side: Side, point: THREE.Vector3): void {
     this.arms[side].target.copy(point);
-    this.leanTarget = THREE.MathUtils.clamp((point.z - (DEALER_POS.z + 0.35)) * 0.55, 0, 0.35);
+    this.leanTarget = THREE.MathUtils.clamp((point.z - (this.base.z + 0.35)) * 0.55, 0, 0.35);
   }
 
   rest(side: Side, duration = 0.3): Promise<void> {
@@ -187,7 +194,7 @@ export class Dealer {
 
   /** The shuffle: hands come together and riffle a few times. */
   async shuffle(): Promise<void> {
-    const center = new THREE.Vector3(0, TABLE_Y + 0.06, DEALER_POS.z + 0.42);
+    const center = new THREE.Vector3(this.base.x, TABLE_Y + 0.06, this.base.z + 0.42);
     this.lookAt(center);
     await Promise.all([
       this.reach('left', center.clone().add(new THREE.Vector3(0.1, 0, 0)), 0.3),

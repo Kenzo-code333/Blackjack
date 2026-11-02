@@ -2,7 +2,7 @@
 // fallback for devices without WebGL.
 
 import type { Card } from '../game/index.js';
-import type { PublicHand, PublicPlayer, PublicState } from '../shared/protocol.js';
+import type { AnyState, PublicHand, PublicPlayer } from '../shared/protocol.js';
 import { MAX_SEATS } from '../shared/protocol.js';
 import { h } from './dom.js';
 import { OUTCOME_TEXT, SUIT_SYMBOL, isRed, money } from './format.js';
@@ -41,7 +41,9 @@ export class Table2D implements TableRenderer {
     container.append(this.root);
   }
 
-  update(state: PublicState, _events: unknown, me: string | null): void {
+  update(anyState: AnyState, _events: unknown, me: string | null): void {
+    if (anyState.game !== 'blackjack') return;
+    const state = anyState;
     const dealer = h(
       'section',
       { class: 'dealer2d' },
