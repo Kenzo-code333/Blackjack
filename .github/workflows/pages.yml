@@ -29,6 +29,8 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npm run build:web
+      # The one-file download, served at /blackjack.html next to the website.
+      - run: npm run build:file && cp dist/blackjack.html dist/web/blackjack.html
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

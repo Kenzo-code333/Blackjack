@@ -58,6 +58,7 @@ page and reloads it when you change code (port 5173). You only ever open 5173.
 | `npm run play` | Plays blackjack in the terminal using the real rules module |
 | `npm run build` | Builds the browser code into `dist/client` |
 | `npm start` | Runs the production server (serves `dist/client` too) on port 3000 |
+| `npm run build:file` | Builds the whole game as one HTML file you can download and double-click: `dist/blackjack.html` |
 | `npm run build:web` | Builds the website version (no server; online tables via a public relay) into `dist/web` |
 | `npm run build:preview` | Builds the single-page claude.ai preview into `dist/preview/blackjack-table.html`: the game engine runs in the page, and online tables use the artifact's live room |
 
@@ -78,6 +79,14 @@ link within 60 s, kick a player from the 👥 menu, chat with 💬, fill all 5 s
 join a 6th time (you watch as a spectator), toggle sound 🔊 and graphics ●/◐.
 
 ---
+
+## Download the game as one file
+
+`npm run build:file` makes `dist/blackjack.html`: the whole game in a single file (about
+800 KB). Double-click it to play in your browser: solo, with bots, or online with friends
+(host a table, then friends open the website link, or their own copy of the file and type
+the code). Once GitHub Pages is on, it's also at
+**https://kenzo-code333.github.io/Blackjack/blackjack.html**.
 
 ## Play with friends who don't have any account
 

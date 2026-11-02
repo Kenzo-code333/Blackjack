@@ -6,6 +6,10 @@ import { defineConfig } from 'vite';
 export default defineConfig({
   root: 'src/client',
   base: './',
+  define: {
+    // Where invite links point when the game is opened from a downloaded file.
+    __SHARE_URL__: JSON.stringify(process.env.SHARE_URL ?? 'https://kenzo-code333.github.io/Blackjack/'),
+  },
   publicDir: 'public',
   resolve: {
     alias: [{ find: 'node:crypto', replacement: fileURLToPath(new URL('./src/client/preview/crypto-shim.ts', import.meta.url)) }],

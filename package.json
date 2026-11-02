@@ -18,7 +18,8 @@
     "typecheck": "tsc --noEmit",
     "play": "tsx scripts/play-cli.ts",
     "build:preview": "vite build -c vite.preview.config.ts && node scripts/assemble-preview.mjs",
-    "build:web": "vite build -c vite.web.config.ts && node -e \"require('fs').renameSync('dist/web/web.html','dist/web/index.html')\""
+    "build:web": "vite build -c vite.web.config.ts && node -e \"require('fs').renameSync('dist/web/web.html','dist/web/index.html')\"",
+    "build:file": "vite build -c vite.file.config.ts && node scripts/assemble-file.mjs"
   },
   "devDependencies": {
     "@types/express": "^5.0.6",

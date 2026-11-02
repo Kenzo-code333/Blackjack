@@ -14,8 +14,13 @@ let hosting: RelayHost | null = null;
 
 type Found = OpenTable & { relay: RelayTable };
 
+declare const __SHARE_URL__: string;
+
+/** Opened as a downloaded file (file://): there's no address to share, so links point to the website. */
+const fromFile = () => location.protocol === 'file:';
+
 /** The page address without any query or hash, e.g. https://name.github.io/Blackjack/ */
-const base = () => `${location.origin}${location.pathname}`;
+const base = () => (fromFile() ? __SHARE_URL__ : `${location.origin}${location.pathname}`);
 
 const api: OnlineApi = {
   onlineAvailable: async () => typeof WebSocket !== 'undefined',
@@ -46,7 +51,11 @@ const api: OnlineApi = {
   },
   // `r` says which relay the host uses, so friends connect to the same one straight away.
   inviteLink: (code) => `${base()}?table=${code}${hosting && hosting.broker > 0 ? `&r=${hosting.broker}` : ''}`,
-  inviteNote: 'Anyone can open this link: no account or app needed. The table lives in your browser tab, so keep it open while you play.',
+  get inviteNote() {
+    return fromFile()
+      ? 'Friends can open the link (the game website), or open their own copy of the game file and type the code in "Join with code". No account needed. Keep this window open while you play: the table lives here.'
+      : 'Anyone can open this link: no account or app needed. The table lives in your browser tab, so keep it open while you play.';
+  },
   invitedCode: () => new URLSearchParams(location.search).get('table')?.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6) || null,
 };
 
