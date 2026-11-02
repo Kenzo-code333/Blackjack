@@ -4,7 +4,13 @@
 //  - SwitchSocket is what Net actually holds; it forwards to whichever one is in use.
 
 import type { PageServer } from './page-server.js';
-import type { RoomLink } from './room-link.js';
+/** A guest's connection to a table hosted on someone else's page (claude.ai room or public relay). */
+export interface GuestLink {
+  onPush: (event: string, args: unknown[]) => void;
+  onResponse: (id: number, res: unknown) => void;
+  request(id: number, event: string, payload: unknown): Promise<void>;
+  leave(): Promise<void>;
+}
 
 type Handler = (...args: unknown[]) => void;
 
@@ -70,7 +76,7 @@ export class RemoteSocket extends BaseSocket {
   private seq = 0;
   private readonly waiting = new Map<number, { ack: Handler; timer: ReturnType<typeof setTimeout> }>();
 
-  constructor(private readonly link: RoomLink) {
+  constructor(private readonly link: GuestLink) {
     super();
     link.onPush = (event, args) => this.push(event, ...args);
     link.onResponse = (id, res) => {

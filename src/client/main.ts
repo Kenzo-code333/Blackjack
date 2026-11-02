@@ -21,7 +21,13 @@ const preview = globals.__bjPreview ?? null;
 const PREVIEW = preview !== null;
 const net = new Net(globals.__bjLocalSocket);
 // The preview can't change the page address, so it keeps the current "path" in memory.
-let currentPath = PREVIEW ? '/' : location.pathname;
+// An invite link to the preview ends in #table-abc123: open the join screen for that table.
+const inviteFromHash = () => preview?.invitedCode() ?? null;
+let currentPath = PREVIEW ? (inviteFromHash() ? `/invite/${inviteFromHash()}` : '/') : location.pathname;
+/** Preview: the code of the online table we're at (hosting or joined), if any. */
+let onlineCode: string | null = null;
+/** Open the invite panel as soon as the next table view appears (right after creating a table). */
+let openInviteNext = false;
 const sound = new Sound({ muted: prefs.muted, music: prefs.musicVolume, sfx: prefs.sfxVolume, voice: prefs.dealerVoice });
 
 // Browsers only allow sound after the first tap or click.
@@ -52,8 +58,13 @@ function go(path: string): void {
 }
 
 window.addEventListener('popstate', () => {
+  if (PREVIEW) return;
   currentPath = location.pathname;
   route();
+});
+window.addEventListener('hashchange', () => {
+  const code = PREVIEW ? inviteFromHash() : null;
+  if (code && net.session?.code !== code) go(`/invite/${code}`);
 });
 
 function tableCodeFromUrl(): string | null {
@@ -68,9 +79,45 @@ function leaveTable(): void {
     void preview.stopHosting();
     preview.useLocal();
   }
+  onlineCode = null;
+}
+
+/** Preview: find an online table by code and sit down at it. */
+async function joinOnline(code: string, name: string): Promise<void> {
+  if (!preview) return;
+  if (!(await preview.onlineAvailable())) {
+    toast('Online tables work when this page is open on claude.ai and you are signed in.', 'error');
+    return;
+  }
+  const table = await preview.findTable(code);
+  if (!table) {
+    toast(`Table ${code} isn't open right now. Check the code, or ask your friend to keep their table open.`, 'error');
+    return;
+  }
+  try {
+    await preview.joinRemote(table);
+  } catch {
+    preview.useLocal();
+    toast('Could not reach that table', 'error');
+    return;
+  }
+  const res = await net.join(table.code, name);
+  if (res.ok) {
+    onlineCode = res.code;
+    go(`/table/${res.code}`);
+  } else {
+    preview.useLocal();
+    toast(res.error, 'error');
+  }
 }
 
 function route(): void {
+  const invited = PREVIEW ? currentPath.match(/^\/invite\/([A-Z0-9]{6})$/)?.[1] : undefined;
+  if (invited) {
+    leaveTable();
+    showOnlineJoin(invited);
+    return;
+  }
   const code = tableCodeFromUrl();
   if (!code) {
     leaveTable();
@@ -107,6 +154,7 @@ function showHome(): void {
   document.title = 'Blackjack';
   const screen = homeScreen({
     preview: PREVIEW,
+    listsTables: preview?.listsTables ?? false,
     solo: async (name) => openTable(await net.create(name, { solo: true })),
     bots: async (name, count) => openTable(await net.create(name, { bots: count })),
     create: async (name) => {
@@ -114,27 +162,31 @@ function showHome(): void {
       if (res.ok && preview) {
         try {
           await preview.host(res.code, name);
+          onlineCode = res.code;
         } catch {
           net.leave();
-          toast('Online play is not available here', 'error');
+          toast("Couldn't open the table online. Check your internet connection and try again.", 'error');
           return;
         }
       }
+      openInviteNext = res.ok;
       await openTable(res);
     },
-    join: (code) => go(`/table/${code}`),
+    join: (code) => go(PREVIEW ? `/invite/${code}` : `/table/${code}`),
     joinOpen: async (name, table: OpenTableInfo) => {
       if (!preview) return;
       try {
-        await preview.joinRemote({ ...table, peer: (table as OpenTableInfo & { peer: string }).peer });
+        await preview.joinRemote(table);
       } catch {
         toast('Could not reach that table', 'error');
         preview.useLocal();
         return;
       }
       const res = await net.join(table.code, name);
-      if (res.ok) go(`/table/${res.code}`);
-      else {
+      if (res.ok) {
+        onlineCode = res.code;
+        go(`/table/${res.code}`);
+      } else {
         preview.useLocal();
         toast(res.error, 'error');
       }
@@ -166,6 +218,13 @@ function showCharacter(): void {
   mount(screen.el, screen.dispose);
 }
 
+/** Preview: someone opened an invite link (or typed a code). */
+function showOnlineJoin(code: string): void {
+  document.title = `Join table ${code} · Blackjack`;
+  const screen = joinScreen(code, (name) => joinOnline(code, name), () => go('/'));
+  mount(screen.el, screen.dispose);
+}
+
 function showJoin(code: string): void {
   document.title = `Join table ${code} · Blackjack`;
   const screen = joinScreen(
@@ -178,6 +237,15 @@ function showJoin(code: string): void {
     () => go('/'),
   );
   mount(screen.el, screen.dispose);
+}
+
+/** What to send friends so they can join this table, or null if it can't be joined. */
+function inviteFor(code: string): { link: string; note: string } | null {
+  if (!preview) {
+    return { link: `${location.origin}/table/${code}`, note: 'No account or app needed: friends open the link, type a name and sit down.' };
+  }
+  if (onlineCode !== code) return null; // tables with bots run only on this page
+  return { link: preview.inviteLink(code), note: preview.inviteNote };
 }
 
 function showTable(): void {
@@ -233,9 +301,13 @@ function showTable(): void {
     },
     onInteract: () => sound.unlock(),
     play: (name) => sound.play(name),
-    canInvite: !PREVIEW,
+    invite: inviteFor(code),
   });
   view.append(hud.el);
+  if (openInviteNext) {
+    openInviteNext = false;
+    setTimeout(() => hud.openInvite(), 400);
+  }
 
   const bet = (value: number) => {
     sound.play('chip');

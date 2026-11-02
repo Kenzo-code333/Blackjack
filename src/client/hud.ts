@@ -27,8 +27,8 @@ export interface HudOptions {
   onInteract?: () => void;
   /** Click feedback sounds. */
   play?: (name: 'click' | 'chip') => void;
-  /** False in the preview build, where friends find tables in the list instead. */
-  canInvite?: boolean;
+  /** How friends join this table: the link to send and a short note. null = can't be joined. */
+  invite?: { link: string; note: string } | null;
 }
 
 const ACTION_LABELS: Record<Action, string> = { hit: 'Hit', stand: 'Stand', double: 'Double', split: 'Split' };
@@ -280,25 +280,30 @@ export class Hud {
       ),
     );
 
-    // Inviting friends: the exact link, the code, copy / share, and a QR code for phones.
-    const inviteUrl = `${location.origin}/table/${net.session?.code ?? ''}`;
+    // Inviting friends: the code, a ready-to-send message with the link, copy / share, and a QR code.
+    const invite = opts.invite ?? null;
+    const tableCode = net.session?.code ?? '';
+    const inviteUrl = invite?.link ?? '';
+    const message = `Join my blackjack table! 🃏\nTable code: ${tableCode}\n${inviteUrl}`;
     const linkField = h('input', { class: 'field invite-link', id: 'invite-link', readonly: true, value: inviteUrl, 'aria-label': 'Invite link' });
     linkField.addEventListener('focus', () => linkField.select());
-    const copy = async () => {
+    const messageField = h('textarea', { class: 'field invite-message', id: 'invite-message', readonly: true, rows: 3, 'aria-label': 'Invite message' }, message);
+    messageField.addEventListener('focus', () => messageField.select());
+    const copyText = async (text: string, field: HTMLInputElement | HTMLTextAreaElement, what: string) => {
       try {
-        await navigator.clipboard.writeText(inviteUrl);
-        toast('Link copied. Paste it in a message to your friends.');
+        await navigator.clipboard.writeText(text);
+        toast(`${what} copied. Paste it to your friends.`);
       } catch {
-        linkField.focus();
-        linkField.select();
-        toast('Press Ctrl+C (or ⌘C) to copy the selected link');
+        field.focus();
+        field.select();
+        toast('Press Ctrl+C (or ⌘C) to copy the selected text');
       }
     };
     const share = async () => {
       try {
-        await navigator.share({ title: 'Blackjack table', text: `Join my blackjack table (code ${net.session?.code ?? ''}):`, url: inviteUrl });
+        await navigator.share({ title: 'Blackjack table', text: `Join my blackjack table! Table code: ${tableCode}`, url: inviteUrl });
       } catch (err) {
-        if ((err as Error).name !== 'AbortError') void copy();
+        if ((err as Error).name !== 'AbortError') void copyText(message, messageField, 'Invite');
       }
     };
     this.invitePanel = h(
@@ -308,16 +313,27 @@ export class Hud {
       h(
         'div',
         { class: 'invite-body' },
-        h('p', {}, 'Send this link. Friends open it, type a name and sit down: no account or app needed.'),
-        h('div', { class: 'invite-row' }, linkField, h('button', { class: 'btn gold small', onclick: press(copy) }, 'Copy')),
-        typeof navigator.share === 'function' ? h('button', { class: 'btn ghost', onclick: press(share) }, 'Share…') : null,
-        h('div', { class: 'invite-code' }, h('span', {}, 'Table code'), h('strong', {}, net.session?.code ?? '')),
+        h('div', { class: 'invite-code' }, h('span', {}, 'Table code'), h('strong', { id: 'invite-code' }, tableCode)),
+        h('label', { class: 'field-label', for: 'invite-message' }, 'Ready to send'),
+        messageField,
+        h(
+          'div',
+          { class: 'invite-actions' },
+          h('button', { class: 'btn gold', onclick: press(() => copyText(message, messageField, 'Invite')) }, 'Copy message'),
+          h('button', { class: 'btn ghost', onclick: press(() => copyText(inviteUrl, linkField, 'Link')) }, 'Copy link'),
+          typeof navigator.share === 'function' ? h('button', { class: 'btn ghost', onclick: press(share) }, 'Share…') : null,
+        ),
+        h('label', { class: 'field-label', for: 'invite-link' }, 'Link'),
+        linkField,
+        invite?.note ? h('p', { class: 'muted invite-note' }, invite.note) : null,
         h('div', { class: 'invite-qr-wrap' }, this.inviteQr, h('span', { class: 'muted' }, 'Friends next to you can scan this with their phone camera.')),
       ),
     );
-    void import('qrcode')
-      .then((QR) => QR.toCanvas(this.inviteQr, inviteUrl, { width: 220, margin: 1, color: { dark: '#14100c', light: '#f6f1e4' } }))
-      .catch(() => (this.inviteQr.hidden = true));
+    if (inviteUrl) {
+      void import('qrcode')
+        .then((QR) => QR.toCanvas(this.inviteQr, inviteUrl, { width: 220, margin: 1, color: { dark: '#14100c', light: '#f6f1e4' } }))
+        .catch(() => (this.inviteQr.hidden = true));
+    }
 
     this.el = h(
       'div',
@@ -373,7 +389,7 @@ export class Hud {
 
     this.banner.textContent = bannerText(state, this.net.me);
     // Solo tables are private, so there is nobody to invite.
-    this.inviteBtn.hidden = state.solo || this.opts.canInvite === false;
+    this.inviteBtn.hidden = state.solo || !this.opts.invite;
     this.balanceEl.textContent = me ? money(me.balance) : '–';
     const onTable = me && state.phase !== 'results' ? me.hands.reduce((s, x) => s + x.bet, 0) || me.bet : 0;
     this.betEl.textContent = money(onTable);
@@ -500,6 +516,11 @@ export class Hud {
       this.chatLog.scrollTop = this.chatLog.scrollHeight;
       if (!matchMedia('(pointer: coarse)').matches) this.chatInput.focus();
     }
+  }
+
+  /** Opens the invite panel (right after creating a table, so the code and link are ready). */
+  openInvite(): void {
+    if (this.opts.invite && this.invitePanel.hidden) this.togglePanel('invite');
   }
 
   /** A big moment: your 21 or blackjack gets a banner and confetti; others get a note. */

@@ -81,8 +81,10 @@ export interface OpenTableInfo {
 }
 
 export interface HomeActions {
-  /** Preview build: tables run in this page; online tables go through the live room. */
+  /** Single-page builds: tables run in this page; online tables go through a live channel. */
   preview: boolean;
+  /** Whether open tables can be listed (claude.ai room); otherwise friends use the code or link. */
+  listsTables: boolean;
   solo: (name: string) => Promise<void>;
   bots: (name: string, count: number) => Promise<void>;
   /** Real server: create a table with an invite link. Preview: host an online table. */
@@ -181,11 +183,11 @@ export function homeScreen(actions: HomeActions): { el: HTMLElement; dispose(): 
     online = h(
       'section',
       { class: 'online' },
-      h('h2', {}, 'Online tables'),
-      list,
-      h('button', { class: 'btn ghost', onclick: withName(actions.create) }, 'Host an online table'),
+      h('h2', {}, 'Play online with friends'),
+      actions.listsTables ? list : h('p', { class: 'muted online-hint' }, "Host a table and you'll get a code and a link to send. Friends open it and sit down: no account needed."),
+      h('button', { class: 'btn gold big', onclick: withName(actions.create) }, 'Host an online table'),
     );
-    unwatch =
+    if (actions.listsTables) unwatch =
       actions.watchTables?.((tables) => {
         if (tables === null) {
           list.replaceChildren(h('li', { class: 'muted' }, 'Online play works when this page is open on claude.ai and you are signed in.'));
@@ -217,7 +219,7 @@ export function homeScreen(actions: HomeActions): { el: HTMLElement; dispose(): 
       h('button', { class: 'btn gold big', onclick: withName(actions.solo) }, 'Play solo'),
       botsRow,
       actions.preview ? null : h('button', { class: 'btn gold big', onclick: withName(actions.create) }, 'Create table'),
-      actions.preview ? null : joinForm,
+      joinForm,
     ),
     online,
   );

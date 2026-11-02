@@ -1083,6 +1083,35 @@ h1 {
   letter-spacing: 0.18em;
   color: var(--gold);
 }
+.invite-panel {
+  max-height: min(84vh, 680px);
+}
+.invite-body > * {
+  flex-shrink: 0;
+}
+.invite-message {
+  height: 84px;
+  min-height: 0;
+  padding: 10px 12px;
+  font: 500 0.9rem/1.45 var(--sans);
+  resize: none;
+}
+.invite-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.invite-actions .btn {
+  flex: 1 1 auto;
+}
+.invite-body .field-label {
+  margin: 4px 0 -6px 2px;
+}
+.invite-note {
+  margin: 0;
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
 .invite-qr-wrap {
   display: grid;
   grid-template-columns: 110px 1fr;

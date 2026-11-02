@@ -58,6 +58,7 @@ page and reloads it when you change code (port 5173). You only ever open 5173.
 | `npm run play` | Plays blackjack in the terminal using the real rules module |
 | `npm run build` | Builds the browser code into `dist/client` |
 | `npm start` | Runs the production server (serves `dist/client` too) on port 3000 |
+| `npm run build:web` | Builds the website version (no server; online tables via a public relay) into `dist/web` |
 | `npm run build:preview` | Builds the single-page claude.ai preview into `dist/preview/blackjack-table.html`: the game engine runs in the page, and online tables use the artifact's live room |
 
 ### Testing multiplayer locally
@@ -80,18 +81,38 @@ join a 6th time (you watch as a spectator), toggle sound 🔊 and graphics ●/�
 
 ## Play with friends who don't have any account
 
-The claude.ai preview needs a Claude account to open. To send friends a link that works
-for anyone (no sign-up, no app, no Claude account), put the game online once:
+There are two ways to get a link that **anyone** can open (no Claude, GitHub or other
+account, nothing to install). Both give you a table code and a ready-to-send invite
+message with a link, plus a QR code.
+
+### Option A: the website on GitHub Pages (free, no server to run)
+
+The whole game runs in the browser. The host's tab runs the table, and friends' moves go
+through a free public relay (MQTT over a secure WebSocket). Links look like
+`https://kenzo-code333.github.io/Blackjack/?table=ABC123`.
+
+1. Merge this code into `main` on GitHub.
+2. On GitHub: repository **Settings → Pages → Build and deployment → Source: GitHub Actions**
+   (one time only).
+3. Open the **Actions** tab: "Deploy website to GitHub Pages" runs (2–3 minutes). Re-run it
+   from there if it ran before step 2.
+4. Open **https://kenzo-code333.github.io/Blackjack/**, type your name, press
+   **Host an online table**. The invite panel opens with the code and a message to send.
+
+Good to know: the table lives in the host's browser tab, so the host keeps it open.
+Messages pass through a public relay, which is fine for play-money games with friends.
+Every push to `main` updates the website.
+
+### Option B: your own server on Render
 
 [![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/Kenzo-code333/Blackjack)
 
 1. Make sure this code is on the `main` branch (merge the pull request on GitHub).
 2. Click the button above, sign in to Render with GitHub (free), and press **Deploy Blueprint**.
 3. After 3–5 minutes you get an address like `https://blackjack-xxxx.onrender.com`.
-4. Open it, **Create table**, then press **Invite friends**: copy the link, share it, or let
-   friends scan the QR code. They open it, type a name, and sit down.
+4. Open it, **Create table**: the invite panel opens with the code and the link.
 
-The detailed version of these steps is below.
+Tables live on the server, so the host can close their tab. The detailed steps are below.
 
 ## Put it online (Render, free)
 

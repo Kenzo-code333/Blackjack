@@ -6,6 +6,10 @@ import { defineConfig } from 'vite';
 export default defineConfig({
   root: 'src/client',
   publicDir: false,
+  define: {
+    // The preview's own claude.ai address, for invite links (override with PREVIEW_URL=...).
+    __PREVIEW_URL__: JSON.stringify(process.env.PREVIEW_URL ?? 'https://claude.ai/artifact/SmSwL59g8jZ6Ny2PEXCGYL'),
+  },
   resolve: {
     alias: [{ find: 'node:crypto', replacement: fileURLToPath(new URL('./src/client/preview/crypto-shim.ts', import.meta.url)) }],
   },
