@@ -1,4 +1,4 @@
-import { type Look, cleanLook, randomLook } from '../shared/protocol.js';
+import { type Look, STARTING_CHIPS, cleanChips, cleanLook, randomLook } from '../shared/protocol.js';
 
 // localStorage / sessionStorage that never throws (private mode, blocked cookies…).
 
@@ -88,6 +88,28 @@ export const prefs = {
   },
   set muted(v: boolean) {
     store.local.set('bj:muted', v ? '1' : '0');
+  },
+  /** Your chips: you walk in with 1,000 and take them from table to table. */
+  get chips(): number {
+    const v = store.local.get('bj:chips');
+    return v === null ? STARTING_CHIPS : cleanChips(v);
+  },
+  set chips(v: number) {
+    store.local.set('bj:chips', String(cleanChips(v)));
+  },
+  /** Chips you cashed out at the cashier: safe from the tables. */
+  get vault(): number {
+    return cleanChips(store.local.get('bj:vault') ?? 0);
+  },
+  set vault(v: number) {
+    store.local.set('bj:vault', String(cleanChips(v)));
+  },
+  /** Your biggest cash-out ever. */
+  get bestCashOut(): number {
+    return cleanChips(store.local.get('bj:best') ?? 0);
+  },
+  set bestCashOut(v: number) {
+    store.local.set('bj:best', String(cleanChips(v)));
   },
   /** null = not chosen yet (auto-detect). */
   get lowGraphics(): boolean | null {

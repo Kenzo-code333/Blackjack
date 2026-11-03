@@ -5,3 +5,4 @@ export * from './rules.js';
 export * from './shoe.js';
 export * from './strategy.js';
 export * from './poker.js';
+export * from './roulette.js';

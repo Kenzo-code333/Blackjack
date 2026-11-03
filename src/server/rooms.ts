@@ -1,13 +1,14 @@
 // Rooms: a table plus the people connected to it, chat, and lifetime timers.
 
 import { randomInt } from 'node:crypto';
-import type { ChatMessage, GameKind, PokerEvent, StateMessage, TableEvent } from '../shared/protocol.js';
+import type { AnyEvent, ChatMessage, GameKind, PokerEvent, StateMessage } from '../shared/protocol.js';
 import { PokerTable, type PokerTiming } from './poker-table.js';
+import { RouletteTable, type RouletteTiming } from './roulette-table.js';
 import { Table, type TableTiming } from './table.js';
 
-/** A blackjack or a poker table: both offer the same seats, bots, host and chat methods. */
-export type GameTable = Table | PokerTable;
-export type AnyEvent = TableEvent | PokerEvent;
+/** A blackjack, poker or roulette table: all offer the same seats, bots, host and chat methods. */
+export type GameTable = Table | PokerTable | RouletteTable;
+export type { AnyEvent };
 
 // No 0/O or 1/I/L, so codes are easy to read out loud.
 const CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
@@ -20,6 +21,7 @@ export interface RoomSettings {
   emptyRoomTtlMs: number;
   timing?: Partial<TableTiming>;
   pokerTiming?: Partial<PokerTiming>;
+  rouletteTiming?: Partial<RouletteTiming>;
 }
 
 export const DEFAULT_ROOM_SETTINGS: RoomSettings = {
@@ -52,7 +54,9 @@ export class Room {
     this.table =
       kind.game === 'poker'
         ? new PokerTable({ code, autoStart: kind.autoStart, timing: settings.pokerTiming, onUpdate: (events) => onUpdate(this, events), onBotChat })
-        : new Table({ code, solo: kind.solo, autoStart: kind.autoStart, timing: settings.timing, onUpdate: (events) => onUpdate(this, events), onBotChat });
+        : kind.game === 'roulette'
+          ? new RouletteTable({ code, solo: kind.solo, autoStart: kind.autoStart, timing: settings.rouletteTiming, onUpdate: (events) => onUpdate(this, events), onBotChat })
+          : new Table({ code, solo: kind.solo, autoStart: kind.autoStart, timing: settings.timing, onUpdate: (events) => onUpdate(this, events), onBotChat });
     this.scheduleCloseIfEmpty();
   }
 
@@ -133,6 +137,8 @@ export class RoomManager {
   constructor(
     private readonly settings: RoomSettings,
     private readonly onUpdate: (room: Room, events: AnyEvent[]) => void,
+    /** Called after a room closes (nobody left, or closed on purpose). */
+    private readonly onClosed: (code: string) => void = () => {},
   ) {}
 
   create(solo: boolean, autoStart = false, game: GameKind = 'blackjack'): Room {
@@ -140,7 +146,10 @@ export class RoomManager {
     do {
       code = Array.from({ length: CODE_LENGTH }, () => CODE_ALPHABET[randomInt(CODE_ALPHABET.length)]).join('');
     } while (this.rooms.has(code));
-    const room = new Room(code, { solo: solo && game === 'blackjack', autoStart, game }, this.settings, this.onUpdate, (r) => this.rooms.delete(r.code));
+    const room = new Room(code, { solo: solo && game !== 'poker', autoStart, game }, this.settings, this.onUpdate, (r) => {
+      this.rooms.delete(r.code);
+      this.onClosed(r.code);
+    });
     this.rooms.set(code, room);
     return room;
   }

@@ -70,6 +70,11 @@ const api: PreviewApi = {
   },
 };
 
+// A hosted table that everyone has left stops being relayed.
+server.onRoomClosed = (code) => {
+  if (hosting?.code === code) void api.stopHosting();
+};
+
 const g = globalThis as { __bjLocalSocket?: unknown; __bjPreview?: PreviewApi };
 g.__bjLocalSocket = switcher;
 g.__bjPreview = api;

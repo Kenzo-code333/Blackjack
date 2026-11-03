@@ -1,6 +1,6 @@
 // The screens before you sit down:
 //   profile  → your avatar and table nickname
-//   lobby    → the casino floor: pick Blackjack or Texas Hold'em
+//   lobby    → the list of games (the 3D floor is in floor-screen.ts)
 //   rules    → how to play, in simple bullet points
 //   join     → someone sent you an invite
 
@@ -44,7 +44,7 @@ function marquee(small = false): HTMLElement {
     { class: `marquee${small ? ' small' : ''}`, 'aria-hidden': small ? 'true' : undefined },
     h('div', { class: 'bulbs' }),
     h('div', { class: 'marquee-name' }, h('span', { class: 'suit red' }, '♥'), CASINO_NAME, h('span', { class: 'suit' }, '♠')),
-    small ? null : h('div', { class: 'marquee-sub' }, 'Blackjack · Texas Hold’em · Play money only'),
+    small ? null : h('div', { class: 'marquee-sub' }, 'Blackjack · Roulette · Texas Hold’em · Play money only'),
   );
 }
 
@@ -173,7 +173,7 @@ export interface LobbyActions {
   /** Single-page builds: online tables go through a live channel instead of the server. */
   preview: boolean;
   listsTables: boolean;
-  solo: () => Promise<void>;
+  solo: (game: GameKind) => Promise<void>;
   bots: (game: GameKind, count: number) => Promise<void>;
   /** Server: a table with an invite link. Single-page builds: an online table you host. */
   create: (game: GameKind) => Promise<void>;
@@ -182,9 +182,11 @@ export interface LobbyActions {
   watchTables?: (fn: (tables: OpenTableInfo[] | null) => void) => () => void;
   rules: (game: GameKind) => void;
   editProfile: () => void;
+  /** Back to the 3D casino floor (from the list). */
+  floorView?: () => void;
 }
 
-function stepper(min: number, max: number, start: number, label: string): { el: HTMLElement; value: () => number } {
+export function stepper(min: number, max: number, start: number, label: string): { el: HTMLElement; value: () => number } {
   let n = start;
   const count = h('span', { class: 'count' }, String(n));
   const set = (d: number) => () => {
@@ -244,7 +246,7 @@ export function lobbyScreen(a: LobbyActions): { el: HTMLElement; dispose(): void
     h(
       'div',
       { class: 'game-actions' },
-      h('button', { class: 'btn gold big', onclick: run(a.solo) }, 'Play solo'),
+      h('button', { class: 'btn gold big', onclick: run(() => a.solo('blackjack')) }, 'Play solo'),
       h('div', { class: 'bots-row' }, h('button', { class: 'btn gold big grow', onclick: run(() => a.bots('blackjack', bjBots.value())) }, 'Play with bots'), bjBots.el),
       h('button', { class: 'btn ghost', onclick: run(() => a.create('blackjack')) }, onlineLabel),
     ),
@@ -272,6 +274,30 @@ export function lobbyScreen(a: LobbyActions): { el: HTMLElement; dispose(): void
       h('button', { class: 'btn ghost', onclick: run(() => a.create('poker')) }, onlineLabel),
     ),
     h('button', { class: 'btn link rules-link', onclick: () => a.rules('poker') }, '📖 How to play Poker'),
+  );
+
+  const rlBots = stepper(1, 5, 3, 'bots');
+  const roulette = h(
+    'article',
+    { class: 'game-card roulette' },
+    h(
+      'div',
+      { class: 'game-art', 'aria-hidden': 'true' },
+      h('span', { class: 'art-wheel' }),
+      h('span', { class: 'art-chip c25' }),
+      h('span', { class: 'art-chip c100' }),
+    ),
+    h('h2', {}, 'Roulette'),
+    h('p', { class: 'tagline' }, RULES.roulette.tagline),
+    h('p', { class: 'game-facts' }, 'Single zero · A number pays 35 to 1'),
+    h(
+      'div',
+      { class: 'game-actions' },
+      h('button', { class: 'btn gold big', onclick: run(() => a.solo('roulette')) }, 'Play solo'),
+      h('div', { class: 'bots-row' }, h('button', { class: 'btn ghost grow', onclick: run(() => a.bots('roulette', rlBots.value())) }, 'Play with bots'), rlBots.el),
+      h('button', { class: 'btn ghost', onclick: run(() => a.create('roulette')) }, onlineLabel),
+    ),
+    h('button', { class: 'btn link rules-link', onclick: () => a.rules('roulette') }, '📖 How to play Roulette'),
   );
 
   // Join a friend's table.
@@ -332,7 +358,8 @@ export function lobbyScreen(a: LobbyActions): { el: HTMLElement; dispose(): void
     { class: 'casino-screen lobby' },
     h('header', { class: 'lobby-top' }, marquee(true), profile),
     h('h1', { class: 'screen-title center' }, 'Choose your table'),
-    h('div', { class: 'game-cards' }, blackjack, poker),
+    a.floorView ? h('div', { class: 'center' }, h('button', { class: 'btn gold', onclick: a.floorView }, '🚶 Walk the casino floor in 3D')) : null,
+    h('div', { class: 'game-cards' }, blackjack, roulette, poker),
     friends,
     h('p', { class: 'fine-print' }, 'Play money only. No real money, ever.'),
   );
@@ -356,7 +383,7 @@ export function rulesScreen(game: GameKind, onBack: () => void, onPlay: () => vo
     h('h1', { class: 'screen-title center' }, `How to play ${r.name}`),
     h('p', { class: 'tagline center' }, r.tagline),
     rulesContent(game),
-    h('div', { class: 'rules-cta' }, h('button', { class: 'btn gold big', onclick: onPlay }, `Play ${game === 'poker' ? 'poker' : 'blackjack'} now`)),
+    h('div', { class: 'rules-cta' }, h('button', { class: 'btn gold big', onclick: onPlay }, `Play ${r.name} now`)),
   );
 }
 

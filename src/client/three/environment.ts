@@ -142,8 +142,9 @@ export function buildRoom(): { group: THREE.Group; extras: THREE.Object3D[]; lam
   return { group, extras, lamp };
 }
 
-export function buildEnvironment(): Environment {
-  const { group, extras, lamp } = buildRoom();
+/** The blackjack table with its shoe, rack and discard tray; with the room around it unless `withRoom` is false. */
+export function buildEnvironment(withRoom = true): Environment {
+  const { group, extras, lamp } = withRoom ? buildRoom() : { group: new THREE.Group(), extras: [] as THREE.Object3D[], lamp: new THREE.SpotLight() };
 
   // --- Table ---
   const shape = tableShape(TABLE_RADIUS);

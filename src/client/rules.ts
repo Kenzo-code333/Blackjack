@@ -150,7 +150,66 @@ export const RULES: Record<GameKind, { name: string; tagline: string; sections: 
           'If two hands are the same kind, the higher cards win.',
           'A perfect tie splits the pot.',
           'Bluffing is allowed: you can bet big with a weak hand to make others fold!',
-          'Out of chips? Tap “Reset my chips” in the players menu (👥).',
+          'Your chips come with you from table to table. Out of chips? Tap ↻ next to your chips to refill to 1,000.',
+        ],
+      },
+    ],
+  },
+  roulette: {
+    name: 'Roulette',
+    tagline: 'Guess where the little ball will stop!',
+    sections: [
+      {
+        title: 'The goal',
+        emoji: '🎯',
+        points: [
+          'A big wheel spins with a little white ball in it.',
+          'The wheel has numbers from 0 to 36 in little pockets.',
+          'Guess where the ball will stop. Guess right and you win chips!',
+        ],
+      },
+      {
+        title: 'The colors',
+        emoji: '🎨',
+        points: [
+          ['Red', 'half of the numbers are red.'],
+          ['Black', 'the other half are black.'],
+          ['Green', 'only one pocket is green: the 0.'],
+        ],
+      },
+      {
+        title: 'How a round goes',
+        emoji: '👣',
+        points: [
+          'Pick a chip at the bottom of the screen.',
+          'Tap the table to put it down: on a number, or on a box like “Red”.',
+          'You can put chips in many places at once.',
+          'Press “Spin”. The dealer spins the wheel and rolls the ball.',
+          'Wait… wait… the ball slows down and drops into a pocket!',
+          'If your bet covers that number, you win. Other chips are taken away.',
+        ],
+      },
+      {
+        title: 'What you can win',
+        emoji: '💰',
+        points: [
+          ['One number', 'the hardest guess. Win 35 times your chips!'],
+          ['Red or Black', 'win the same as your chips (double your money).'],
+          ['Odd or Even', 'win the same as your chips.'],
+          ['1–18 or 19–36', 'small numbers or big numbers: win the same as your chips.'],
+          ['A dozen (12 numbers)', 'like “1st 12”: win 2 times your chips.'],
+          ['A column', 'one long row of the table (the “2 to 1” boxes): win 2 times your chips.'],
+          'You also get back the chips you bet when you win.',
+        ],
+      },
+      {
+        title: 'Good to know',
+        emoji: '💡',
+        points: [
+          'The green 0 is not red or black, not odd or even. Only a bet on 0 itself wins.',
+          'Every spin is new: the wheel doesn’t remember what came before.',
+          '“Rebet” puts down the same chips as last time.',
+          'Your chips come with you from table to table. Out of chips? Tap ↻ next to your chips to refill to 1,000.',
         ],
       },
     ],

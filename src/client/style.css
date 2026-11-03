@@ -1949,3 +1949,498 @@ h1 {
     animation: none;
   }
 }
+
+/* ---------- The red Leave button ---------- */
+
+.leave-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 40px;
+  padding: 0 16px 0 12px;
+  border-radius: 999px;
+  border: 2px solid #e8c46a;
+  cursor: pointer;
+  color: #fff7e8;
+  font: 800 0.92rem var(--sans);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+  background: radial-gradient(ellipse at 50% 20%, #f0505e, #b3121f 60%, #7c0912);
+  box-shadow:
+    0 0 0 3px rgba(0, 0, 0, 0.35),
+    0 4px 0 #5a060c,
+    0 8px 20px rgba(200, 20, 40, 0.45),
+    inset 0 1px 0 rgba(255, 255, 255, 0.35);
+  transition: transform 0.1s, box-shadow 0.15s, filter 0.15s;
+  touch-action: manipulation;
+}
+.leave-btn:hover {
+  filter: brightness(1.1);
+  box-shadow:
+    0 0 0 3px rgba(0, 0, 0, 0.35),
+    0 4px 0 #5a060c,
+    0 8px 26px rgba(255, 40, 60, 0.6),
+    inset 0 1px 0 rgba(255, 255, 255, 0.35);
+}
+.leave-btn:active {
+  transform: translateY(3px);
+  box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.35), 0 1px 0 #5a060c;
+}
+.leave-btn:focus-visible {
+  outline: 3px solid #fff2c0;
+  outline-offset: 2px;
+}
+.leave-icon {
+  font-size: 1.05rem;
+}
+@media (max-width: 480px) {
+  .leave-btn {
+    height: 36px;
+    padding: 0 12px 0 10px;
+    font-size: 0.8rem;
+  }
+}
+
+/* ---------- Roulette controls ---------- */
+
+.chips.selectable .chip.selected {
+  transform: translateY(-6px);
+  box-shadow:
+    0 0 0 3px #fff2c0,
+    0 0 18px 4px rgba(255, 220, 130, 0.7),
+    0 8px 18px rgba(0, 0, 0, 0.5);
+}
+.roulette-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+  align-items: center;
+  justify-content: center;
+}
+.quick-bets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: center;
+  max-width: 330px;
+}
+.quick-bet {
+  min-width: 64px;
+  border: 1px solid rgba(232, 200, 120, 0.45);
+  background: rgba(20, 60, 40, 0.85);
+}
+.quick-bet.q-red {
+  background: linear-gradient(#c81d33, #8e0f1f);
+}
+.quick-bet.q-black {
+  background: linear-gradient(#2a2a2a, #0c0c0c);
+}
+.spin-btn {
+  min-width: 120px;
+}
+.roulette-info {
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+.roulette-history,
+.roulette-bets {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 5px 10px;
+  border-radius: 12px;
+  background: rgba(8, 10, 9, 0.72);
+  border: 1px solid var(--line);
+  font-size: 0.85rem;
+  backdrop-filter: blur(6px);
+}
+.roulette-bets:empty,
+.roulette-history:empty,
+.roulette-history:has(> :only-child) {
+  display: none;
+}
+.rh {
+  display: inline-grid;
+  place-items: center;
+  min-width: 26px;
+  height: 26px;
+  padding: 0 4px;
+  border-radius: 50%;
+  font-weight: 800;
+  font-size: 0.8rem;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+}
+.rh-red {
+  background: #b0122a;
+}
+.rh-black {
+  background: #151515;
+}
+.rh-green {
+  background: #0e7a40;
+}
+.rh.latest {
+  box-shadow: 0 0 0 2px #f6d78a, 0 0 12px rgba(246, 215, 138, 0.7);
+}
+.rb {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  font-weight: 700;
+}
+.rb-red {
+  background: rgba(176, 18, 42, 0.8);
+}
+.rb-black {
+  background: rgba(20, 20, 20, 0.9);
+}
+.rb-green {
+  background: rgba(14, 122, 64, 0.85);
+}
+
+/* Lobby card for roulette. */
+.game-cards {
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+}
+.game-card.roulette {
+  background: radial-gradient(ellipse at 50% 0%, #8a1a2b, #3e0a14 75%);
+}
+.art-wheel {
+  position: absolute;
+  left: 8px;
+  top: 4px;
+  width: 88px;
+  height: 88px;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle, #d8b25e 0 9%, #5a2a12 10% 34%, transparent 35%),
+    conic-gradient(#0e7a40 0 9.7deg, #b0122a 9.7deg 19.4deg, #141414 19.4deg 29.1deg, #b0122a 29.1deg 38.8deg, #141414 38.8deg 48.5deg, #b0122a 48.5deg 58.2deg, #141414 58.2deg 67.9deg, #b0122a 67.9deg 77.6deg, #141414 77.6deg 87.3deg, #b0122a 87.3deg 97deg, #141414 97deg 106.7deg, #b0122a 106.7deg 116.4deg, #141414 116.4deg 126.1deg, #b0122a 126.1deg 135.8deg, #141414 135.8deg 145.5deg, #b0122a 145.5deg 155.2deg, #141414 155.2deg 164.9deg, #b0122a 164.9deg 174.6deg, #141414 174.6deg 184.3deg, #b0122a 184.3deg 194deg, #141414 194deg 203.7deg, #b0122a 203.7deg 213.4deg, #141414 213.4deg 223.1deg, #b0122a 223.1deg 232.8deg, #141414 232.8deg 242.5deg, #b0122a 242.5deg 252.2deg, #141414 252.2deg 261.9deg, #b0122a 261.9deg 271.6deg, #141414 271.6deg 281.3deg, #b0122a 281.3deg 291deg, #141414 291deg 300.7deg, #b0122a 300.7deg 310.4deg, #141414 310.4deg 320.1deg, #b0122a 320.1deg 329.8deg, #141414 329.8deg 339.5deg, #b0122a 339.5deg 349.2deg, #141414 349.2deg 360deg);
+  border: 5px solid #5a2a12;
+  box-shadow: 0 0 0 2px #d8b25e, 0 6px 18px rgba(0, 0, 0, 0.5);
+  animation: art-spin 14s linear infinite;
+}
+@keyframes art-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.game-card.roulette .art-chip:nth-of-type(2) {
+  right: 58px;
+}
+.game-card.roulette .art-chip:nth-of-type(3) {
+  right: 14px;
+  bottom: 18px;
+}
+
+/* ---------- The 3D casino floor ---------- */
+
+.floor-screen {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  background: #0b0706;
+  user-select: none;
+}
+.floor-stage,
+.floor-stage canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  cursor: grab;
+}
+.floor-loading {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 14px;
+  font: 600 1.1rem var(--serif);
+  color: #f6d78a;
+}
+.floor-top {
+  position: absolute;
+  top: calc(10px + var(--safe-t));
+  left: 12px;
+  right: 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  pointer-events: none;
+}
+.floor-top > * {
+  pointer-events: auto;
+}
+.floor-top .spacer {
+  flex: 1;
+}
+.floor-brand {
+  font: 800 1.35rem var(--serif);
+  color: #f6d78a;
+  letter-spacing: 0.04em;
+  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.8), 0 0 20px rgba(246, 215, 138, 0.35);
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: rgba(10, 6, 5, 0.55);
+  border: 1px solid rgba(232, 200, 120, 0.35);
+  backdrop-filter: blur(6px);
+}
+.floor-brand .suit {
+  margin: 0 6px;
+}
+.floor-brand .suit.red {
+  color: #e2384a;
+}
+.floor-join {
+  position: absolute;
+  top: calc(64px + var(--safe-t));
+  right: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: min(320px, calc(100vw - 24px));
+  padding: 14px;
+  border-radius: var(--radius);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  backdrop-filter: blur(10px);
+  z-index: 3;
+}
+.floor-hint {
+  position: absolute;
+  bottom: calc(76px + var(--safe-b));
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 8px 16px;
+  border-radius: 999px;
+  background: rgba(10, 6, 5, 0.7);
+  border: 1px solid var(--line);
+  font-size: 0.88rem;
+  color: var(--text);
+  white-space: nowrap;
+  max-width: calc(100vw - 24px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: opacity 1s;
+  pointer-events: none;
+}
+.floor-hint.fade {
+  opacity: 0;
+}
+.floor-go {
+  position: absolute;
+  bottom: calc(18px + var(--safe-b));
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px 6px 14px;
+  border-radius: 999px;
+  background: rgba(10, 6, 5, 0.75);
+  border: 1px solid var(--line);
+  backdrop-filter: blur(8px);
+  font-size: 0.85rem;
+}
+.floor-go .go {
+  border: 1px solid rgba(232, 200, 120, 0.5);
+  border-radius: 999px;
+  padding: 7px 12px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.go.bj {
+  background: linear-gradient(#1b8455, #0d4a30);
+}
+.go.rl {
+  background: linear-gradient(#a3192e, #5a0b16);
+}
+.go.pk {
+  background: linear-gradient(#1d4f86, #0f2846);
+}
+.station-card {
+  position: absolute;
+  right: 16px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: min(340px, calc(100vw - 32px));
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 18px;
+  border-radius: 20px;
+  border: 2px solid rgba(201, 165, 74, 0.7);
+  box-shadow: inset 0 0 0 5px rgba(0, 0, 0, 0.2), 0 24px 60px rgba(0, 0, 0, 0.6);
+  animation: card-in 0.35s cubic-bezier(0.2, 0.9, 0.3, 1.2);
+  z-index: 2;
+}
+.station-card.blackjack {
+  background: radial-gradient(ellipse at 50% 0%, rgba(27, 132, 85, 0.96), rgba(13, 74, 48, 0.96) 75%);
+}
+.station-card.poker {
+  background: radial-gradient(ellipse at 50% 0%, rgba(29, 79, 134, 0.96), rgba(15, 40, 70, 0.96) 75%);
+}
+.station-card.roulette {
+  background: radial-gradient(ellipse at 50% 0%, rgba(138, 26, 43, 0.96), rgba(62, 10, 20, 0.96) 75%);
+}
+.station-card h2 {
+  margin: 0;
+  font: 800 1.7rem var(--serif);
+  color: #f6d78a;
+}
+.station-card .tagline {
+  margin: 2px 0 0;
+  font-weight: 600;
+}
+@keyframes card-in {
+  from {
+    opacity: 0;
+    transform: translateY(-50%) translateX(30px) scale(0.96);
+  }
+}
+.stick {
+  position: absolute;
+  width: 120px;
+  height: 120px;
+  margin: -60px 0 0 -60px;
+  border-radius: 50%;
+  border: 2px solid rgba(246, 215, 138, 0.5);
+  background: rgba(10, 6, 5, 0.35);
+  pointer-events: none;
+}
+.stick .knob {
+  position: absolute;
+  left: 35px;
+  top: 35px;
+  width: 50px;
+  height: 50px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 40% 35%, #fbe7a1, #c99a3a);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+}
+@media (max-width: 700px) {
+  .floor-brand {
+    font-size: 1rem;
+    padding: 5px 10px;
+  }
+  .floor-top .profile-chip .chip-text {
+    display: none;
+  }
+  .station-card {
+    top: auto;
+    bottom: calc(70px + var(--safe-b));
+    left: 12px;
+    right: 12px;
+    width: auto;
+    transform: none;
+    padding: 14px;
+    gap: 8px;
+  }
+  .station-card h2 {
+    font-size: 1.35rem;
+  }
+  @keyframes card-in {
+    from {
+      opacity: 0;
+      transform: translateY(30px);
+    }
+  }
+  .floor-hint {
+    bottom: calc(70px + var(--safe-b));
+    font-size: 0.78rem;
+  }
+  .floor-go .muted {
+    display: none;
+  }
+}
+@media (min-width: 900px) {
+  /* Roulette: last numbers and your bets sit top-right, clear of the buttons. */
+  .my-cards.roulette-info {
+    top: calc(64px + var(--safe-t));
+    bottom: auto;
+    max-width: 360px;
+  }
+}
+
+/* ---------- Wallet ---------- */
+
+.refill-btn {
+  margin-left: 6px;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 1px solid rgba(232, 200, 120, 0.6);
+  background: rgba(232, 200, 120, 0.15);
+  color: #f6d78a;
+  font-weight: 800;
+  line-height: 1;
+  cursor: pointer;
+  pointer-events: auto;
+}
+.refill-btn:hover {
+  background: rgba(232, 200, 120, 0.35);
+}
+.floor-wallet {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 10px 6px 8px;
+  border-radius: 999px;
+  background: rgba(10, 6, 5, 0.65);
+  border: 1px solid var(--line);
+  backdrop-filter: blur(6px);
+  font-variant-numeric: tabular-nums;
+}
+.floor-wallet .coin {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: radial-gradient(circle, #c62f37 0 45%, transparent 46%), repeating-conic-gradient(#fff 0 15deg, #c62f37 15deg 45deg);
+  margin-right: 4px;
+}
+@media (max-width: 700px) {
+  .floor-wallet .muted {
+    display: none;
+  }
+}
+.go.cs {
+  background: linear-gradient(#b8892f, #6e4f14);
+}
+.station-card.cashier {
+  background: radial-gradient(ellipse at 50% 0%, rgba(122, 86, 24, 0.97), rgba(46, 30, 8, 0.97) 75%);
+}
+.cash-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(232, 200, 120, 0.3);
+  font-variant-numeric: tabular-nums;
+}
+.cash-ticket {
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #f7efd9;
+  color: #2a1d08;
+  font-weight: 700;
+  border: 2px dashed #b8892f;
+  animation: ticket-in 0.4s ease-out;
+}
+.station-card .small {
+  font-size: 0.78rem;
+  margin: 0;
+}
+@keyframes ticket-in {
+  from {
+    opacity: 0;
+    transform: scale(0.9) rotate(-2deg);
+  }
+}

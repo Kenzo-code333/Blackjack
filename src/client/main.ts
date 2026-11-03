@@ -8,11 +8,13 @@ import './style.css';
 import { Sound } from './audio.js';
 import { h, toast } from './dom.js';
 import { Hud } from './hud.js';
+import { walletOf } from './format.js';
 import { Net, forgetSession, savedSession } from './net.js';
 import type { PreviewApi } from './preview/install.js';
 import type { AnyState, GameKind } from '../shared/protocol.js';
 import type { TableRenderer } from './renderer.js';
-import { CASINO_NAME, type OpenTableInfo, joinScreen, lobbyScreen, profileScreen, rulesScreen } from './screens.js';
+import { floorScreen } from './floor-screen.js';
+import { CASINO_NAME, type LobbyActions, type OpenTableInfo, joinScreen, lobbyScreen, profileScreen, rulesScreen } from './screens.js';
 import { prefs, store } from './storage.js';
 import { Table2D } from './table2d.js';
 
@@ -75,11 +77,20 @@ function tableCodeFromUrl(): string | null {
   return m ? m[1]!.toUpperCase() : null;
 }
 
-/** Leaves the current table (and, in the preview, closes an online table you host). */
+/**
+ * Leaves the current table. In the single-page builds an online table you host lives in
+ * this page: if friends are still playing there, it keeps running for them (someone else
+ * becomes the host) until everyone has left. It only closes if nobody else is there.
+ */
 function leaveTable(): void {
+  const code = net.session?.code ?? null;
+  const othersHere = Boolean(net.state?.players.some((p) => p.id !== net.me && !p.bot && p.connected));
   if (net.session) net.leave();
   if (preview) {
-    void preview.stopHosting();
+    if (preview.hostingCode && preview.hostingCode === code) {
+      if (othersHere) toast('You left. Your table keeps running for your friends while this page stays open.');
+      else void preview.stopHosting();
+    }
     preview.useLocal();
   }
   onlineCode = null;
@@ -124,7 +135,7 @@ function route(): void {
   const code = tableCodeFromUrl();
   if (!code) {
     leaveTable();
-    const rules = currentPath.match(/^\/rules\/(blackjack|poker)$/)?.[1] as GameKind | undefined;
+    const rules = currentPath.match(/^\/rules\/(blackjack|poker|roulette)$/)?.[1] as GameKind | undefined;
     if (rules) showRules(rules);
     else if (currentPath === '/lobby' && prefs.name) showLobby();
     else showProfile();
@@ -155,7 +166,7 @@ async function openTable(res: Awaited<ReturnType<Net['create']>>): Promise<void>
   else toast(res.error, 'error');
 }
 
-const GAME_TITLE: Record<GameKind, string> = { blackjack: 'Blackjack', poker: 'Texas Hold’em' };
+const GAME_TITLE: Record<GameKind, string> = { blackjack: 'Blackjack', poker: 'Texas Hold’em', roulette: 'Roulette' };
 
 /** The home page: your avatar and table nickname. */
 function showProfile(): void {
@@ -164,14 +175,14 @@ function showProfile(): void {
   mount(screen.el, screen.dispose);
 }
 
-/** The casino floor: choose a game. */
+/** The casino floor: walk around in 3D (or a simple list), then pick a table. */
 function showLobby(): void {
-  document.title = `${CASINO_NAME} · Choose your table`;
+  document.title = `${CASINO_NAME} · Casino floor`;
   const name = () => prefs.name || 'Player';
-  const screen = lobbyScreen({
+  const actions: LobbyActions = {
     preview: PREVIEW,
     listsTables: preview?.listsTables ?? false,
-    solo: async () => openTable(await net.create(name(), { solo: true })),
+    solo: async (game) => openTable(await net.create(name(), { solo: true, game })),
     bots: async (game, count) => openTable(await net.create(name(), { bots: count, game })),
     create: async (game) => {
       const res = await net.create(name(), { game });
@@ -225,6 +236,30 @@ function showLobby(): void {
       : undefined,
     rules: (game) => go(`/rules/${game}`),
     editProfile: () => go('/'),
+  };
+  const listView = store.local.get('bj:lobby') === 'list';
+  if (listView) {
+    const screen = lobbyScreen({
+      ...actions,
+      floorView: () => {
+        store.local.set('bj:lobby', 'floor');
+        showLobby();
+      },
+    });
+    mount(screen.el, screen.dispose);
+    return;
+  }
+  const screen = floorScreen({
+    ...actions,
+    low: defaultLowGraphics(),
+    listView: () => {
+      store.local.set('bj:lobby', 'list');
+      showLobby();
+    },
+    onAutoLow: () => {
+      prefs.lowGraphics = true;
+      toast('Switched to low graphics for smoother play');
+    },
   });
   mount(screen.el, screen.dispose);
 }
@@ -237,7 +272,7 @@ function showRules(game: GameKind): void {
       () => go('/lobby'),
       async () => {
         if (!prefs.name) return go('/');
-        await openTable(await net.create(prefs.name, game === 'poker' ? { game, bots: 4 } : { solo: true }));
+        await openTable(await net.create(prefs.name, game === 'poker' ? { game, bots: 4 } : { solo: true, game }));
       },
     ),
   );
@@ -381,6 +416,19 @@ function showTableFor(code: string, game: GameKind): void {
             toast('Switched to low graphics for smoother play');
           },
         });
+      } else if (game === 'roulette') {
+        const { RouletteScene3D } = await import('./three/roulette-scene.js');
+        if (disposed) return;
+        renderer = new RouletteScene3D(stage, {
+          sound,
+          low,
+          onSpot: (spot) => hud.roulette?.bet(spot),
+          onAutoLow: () => {
+            low = true;
+            hud.setLowGraphics(true);
+            toast('Switched to low graphics for smoother play');
+          },
+        });
       } else renderer = new Table3D(stage, {
         sound,
         low,
@@ -395,8 +443,8 @@ function showTableFor(code: string, game: GameKind): void {
     } catch (err) {
       console.warn('3D unavailable, using the 2D table', err);
       if (disposed) return;
-      if (game === 'poker') {
-        toast('This device can’t show the 3D poker table.', 'error');
+      if (game !== 'blackjack') {
+        toast(`This device can’t show the 3D ${GAME_TITLE[game]} table.`, 'error');
         return;
       }
       renderer = new Table2D(stage);
@@ -416,6 +464,9 @@ function showTableFor(code: string, game: GameKind): void {
   net.onState = (state, events) => {
     renderer?.update(state, events, net.me);
     hud.update(state);
+    // Your chips go with you to the next table.
+    const wallet = walletOf(state, net.me);
+    if (wallet !== null) prefs.chips = wallet;
   };
   net.onChat = (m) => {
     hud.addChat(m);

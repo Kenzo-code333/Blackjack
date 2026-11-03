@@ -1,5 +1,6 @@
 import type { Card, Outcome } from '../game/index.js';
-import type { PokerState, PublicPlayer, PublicState } from '../shared/protocol.js';
+import { pocketColor } from '../game/index.js';
+import type { AnyState, PokerState, PublicPlayer, PublicState, RouletteState } from '../shared/protocol.js';
 
 export const money = (n: number): string =>
   n.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 1 });
@@ -94,4 +95,47 @@ export function pokerBanner(state: PokerState, me: string | null): string {
       return `${street} · ${p?.name ?? 'Player'} is thinking…`;
     }
   }
+}
+
+/** "17 Black", "0 Green". */
+export const pocketName = (n: number): string => `${n} ${pocketColor(n)[0]!.toUpperCase()}${pocketColor(n).slice(1)}`;
+
+/** The headline at the roulette table. */
+export function rouletteBanner(state: RouletteState, me: string | null): string {
+  const mine = state.players.find((p) => p.id === me);
+  const host = state.players.find((p) => p.isHost);
+  switch (state.phase) {
+    case 'waiting':
+      if (state.solo) return 'Pick a chip, tap the table to bet, then press Spin';
+      return mine?.isHost ? 'Press Start to open the betting' : `Waiting for ${host?.name ?? 'the host'} to start`;
+    case 'betting':
+      if (mine?.ready) return 'Ready! Waiting for the others…';
+      return 'Place your bets: tap the table';
+    case 'spinning':
+      return state.spin ? 'The ball is rolling…' : 'No more bets!';
+    case 'results': {
+      const n = state.result ?? 0;
+      if (mine && mine.staked > 0) {
+        const net = mine.won - mine.staked;
+        if (mine.won > 0) return `${pocketName(n)}! You win ${money(mine.won)}${net > 0 ? ` (${signed(net)})` : ''}`;
+        return `${pocketName(n)}. Not this time (${signed(net)})`;
+      }
+      return `${pocketName(n)}`;
+    }
+  }
+}
+
+/**
+ * The chips you'd walk away with right now: your stack, plus bets you could still take
+ * back (placed but not yet in play). Saved as your wallet for the next table.
+ */
+export function walletOf(state: AnyState, me: string | null): number | null {
+  const p = state.players.find((x) => x.id === me);
+  if (!p || p.seat === null) return null;
+  if (state.game === 'blackjack') return p.balance + (state.phase === 'betting' ? (p as PublicPlayer).bet : 0);
+  if (state.game === 'roulette') {
+    const bets = (p as RouletteState['players'][number]).bets.reduce((s, b) => s + b.amount, 0);
+    return p.balance + (state.phase === 'betting' || state.phase === 'waiting' ? bets : 0);
+  }
+  return p.balance;
 }

@@ -4,8 +4,9 @@
 // online table) friends whose messages arrive through the artifact's live room.
 
 import type { Action } from '../../game/index.js';
-import { type ChatMessage, type PokerAction, cleanLook } from '../../shared/protocol.js';
+import { type ChatMessage, type PokerAction, cleanChips, cleanLook } from '../../shared/protocol.js';
 import { PokerTable } from '../../server/poker-table.js';
+import { RouletteTable } from '../../server/roulette-table.js';
 import { Table } from '../../server/table.js';
 import { DEFAULT_ROOM_SETTINGS, RateLimiter, type Room, RoomManager, cleanChat, cleanName, normalizeCode } from '../../server/rooms.js';
 
@@ -23,10 +24,16 @@ const POKER_ACTIONS: readonly PokerAction[] = ['fold', 'check', 'call', 'raise',
 
 export class PageServer {
   private readonly conns = new Map<string, { conn: Connection; code?: string; playerId?: string; chat: RateLimiter }>();
-  readonly rooms = new RoomManager(DEFAULT_ROOM_SETTINGS, (room, events) => {
-    // Each connection gets its own view (in poker, only its own hole cards).
-    for (const c of this.conns.values()) if (c.code === room.code) c.conn.deliver('state', room.stateFor(c.playerId ?? null, events));
-  });
+  readonly rooms = new RoomManager(
+    DEFAULT_ROOM_SETTINGS,
+    (room, events) => {
+      // Each connection gets its own view (in poker, only its own hole cards).
+      for (const c of this.conns.values()) if (c.code === room.code) c.conn.deliver('state', room.stateFor(c.playerId ?? null, events));
+    },
+    (code) => this.onRoomClosed?.(code),
+  );
+  /** A table closed (everyone left): the online host stops relaying it. */
+  onRoomClosed: ((code: string) => void) | null = null;
   /** Called once per broadcast that has remote listeners (the online host sends it to the room). */
   onRemoteBroadcast: ((code: string, event: string, args: unknown[]) => void) | null = null;
 
@@ -87,10 +94,10 @@ export class PageServer {
       const name = cleanName(p.name);
       if (!name) return { ok: false, error: 'Please enter a name' };
       if (c.code && c.playerId) this.rooms.get(c.code)?.remove(c.playerId);
-      const game = p.game === 'poker' ? 'poker' : 'blackjack';
-      const bots = Math.max(0, Math.min(game === 'poker' ? 5 : 4, Math.floor(Number(p.bots) || 0)));
+      const game = p.game === 'poker' || p.game === 'roulette' ? p.game : 'blackjack';
+      const bots = Math.max(0, Math.min(game === 'blackjack' ? 4 : 5, Math.floor(Number(p.bots) || 0)));
       const room = this.rooms.create(p.solo === true, bots > 0, game);
-      const player = room.table.addPlayer(name, cleanLook(p.look));
+      const player = room.table.addPlayer(name, cleanLook(p.look), null, cleanChips(p.chips));
       for (let i = 0; i < bots; i++) room.table.addBot(player.id);
       return this.enter(connId, room, player.id);
     }
@@ -108,7 +115,7 @@ export class PageServer {
       if (room.table.solo) return { ok: false, error: 'That is a private solo table' };
       const name = cleanName(p.name);
       if (!name) return { ok: false, error: 'Please enter a name' };
-      const player = room.table.addPlayer(name, cleanLook(p.look));
+      const player = room.table.addPlayer(name, cleanLook(p.look), null, cleanChips(p.chips));
       room.system(player.seat === null ? `${name} is watching (table full)` : `${name} sat down`);
       return this.enter(connId, room, player.id);
     }
@@ -141,6 +148,16 @@ export class PageServer {
         if (!(table instanceof PokerTable)) return { ok: false, error: 'Not a poker table' };
         if (!POKER_ACTIONS.includes(p.action as PokerAction)) return { ok: false, error: 'Unknown action' };
         return this.result(table.act(me, p.action as PokerAction, Number(p.amount) || 0));
+      case 'roulette:bet':
+      case 'roulette:clear':
+      case 'roulette:rebet':
+      case 'roulette:ready': {
+        if (!(table instanceof RouletteTable)) return { ok: false, error: 'Not a roulette table' };
+        if (event === 'roulette:bet') return this.result(table.placeBet(me, p.spot, p.amount));
+        if (event === 'roulette:clear') return this.result(table.clearBets(me));
+        if (event === 'roulette:rebet') return this.result(table.rebet(me));
+        return this.result(table.setReady(me));
+      }
       case 'chips:reset':
         return this.result(table.resetChips(me));
       case 'player:look':

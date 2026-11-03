@@ -3,7 +3,7 @@
 
 import { type Socket, io } from 'socket.io-client';
 import type { Action } from '../game/index.js';
-import type { AnyState, ChatMessage, ClientToServer, GameKind, JoinResult, Look, PokerAction, PokerEvent, ServerToClient, TableEvent } from '../shared/protocol.js';
+import type { AnyEvent, AnyState, ChatMessage, ClientToServer, GameKind, JoinResult, Look, PokerAction, PokerEvent, ServerToClient, TableEvent } from '../shared/protocol.js';
 import { prefs, store } from './storage.js';
 
 type Res<T = object> = ({ ok: true } & T) | { ok: false; error: string; code?: string };
@@ -49,7 +49,7 @@ export class Net {
   clockOffset = 0;
   status: ConnectionStatus = 'connecting';
 
-  onState: (state: AnyState, events: (TableEvent | PokerEvent)[]) => void = () => {};
+  onState: (state: AnyState, events: AnyEvent[]) => void = () => {};
   onChat: (msg: ChatMessage) => void = () => {};
   onChatHistory: (msgs: ChatMessage[]) => void = () => {};
   onKicked: () => void = () => {};
@@ -129,17 +129,21 @@ export class Net {
 
   /** `bots`: computer players to seat with you. */
   async create(name: string, opts: { solo?: boolean; bots?: number; game?: GameKind } = {}) {
-    return this.enter(await this.request<JoinResult>('room:create', { name, ...opts, look: prefs.look }));
+    return this.enter(await this.request<JoinResult>('room:create', { name, ...opts, look: prefs.look, chips: prefs.chips }));
   }
 
   async join(code: string, name: string) {
     const token = savedSession(code)?.token;
-    return this.enter(await this.request<JoinResult>('room:join', { code, name, token, look: prefs.look }));
+    return this.enter(await this.request<JoinResult>('room:join', { code, name, token, look: prefs.look, chips: prefs.chips }));
   }
 
   setLook = (look: Look) => this.request('player:look', { look });
   addBot = () => this.request('host:addBot');
   pokerAct = (action: PokerAction, amount?: number) => this.request('poker:act', { action, amount });
+  rouletteBet = (spot: string, amount: number) => this.request('roulette:bet', { spot, amount });
+  rouletteClear = () => this.request('roulette:clear');
+  rouletteRebet = () => this.request('roulette:rebet');
+  rouletteReady = () => this.request('roulette:ready');
 
   /** Take back a saved seat without creating a new player. */
   async rejoin(code: string) {

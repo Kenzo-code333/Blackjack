@@ -7,7 +7,7 @@
 // the middle of a round just works).
 
 import * as THREE from 'three';
-import type { AnyState, PokerEvent, PublicPlayer, PublicState, TableEvent } from '../../shared/protocol.js';
+import type { AnyEvent, AnyState, PokerEvent, PublicPlayer, PublicState, TableEvent } from '../../shared/protocol.js';
 import type { Sound } from '../audio.js';
 import { OUTCOME_TEXT, money } from '../format.js';
 import type { TableRenderer } from '../renderer.js';
@@ -190,7 +190,7 @@ export class Table3D implements TableRenderer {
 
   // ---------- TableRenderer ----------
 
-  update(anyState: AnyState, anyEvents: (TableEvent | PokerEvent)[], me: string | null): void {
+  update(anyState: AnyState, anyEvents: AnyEvent[], me: string | null): void {
     if (anyState.game !== 'blackjack') return;
     const state = anyState;
     const events = anyEvents as TableEvent[];

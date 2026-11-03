@@ -94,7 +94,7 @@ describe('socket server', () => {
       who.on('state', ({ state }) => {
         if (state.phase === 'insurance' && state.players.find((p) => p.id === id)?.insurance === null)
           void call(who, 'insurance', { take: false });
-        if (state.turn?.playerId === id) void call(who, 'action', { action: 'stand' });
+        if ('turn' in state && state.turn?.playerId === id) void call(who, 'action', { action: 'stand' });
       });
     autoStand(alice, created.playerId);
     autoStand(bob, joined.playerId);
@@ -258,5 +258,43 @@ describe('socket server', () => {
     const state = await host.next((s) => s.players.length === 6);
     expect(state.players.map((p) => p.seat)).toEqual([0, 1, 2, 3, 4, null]);
     expect(await call(host, 'room:join', { code: 'NOPE99', name: 'x' })).toMatchObject({ ok: false });
+  });
+  it('the host can leave: the table keeps going and a friend becomes the host (all three games)', async () => {
+    for (const game of ['blackjack', 'poker', 'roulette'] as const) {
+      const host = await client();
+      const friend = await client();
+      const created = await call<JoinResult>(host, 'room:create', { name: 'Host', game });
+      if (!created.ok) throw new Error(created.error);
+      const joined = await call<JoinResult>(friend, 'room:join', { code: created.code, name: 'Friend' });
+      expect(joined.ok).toBe(true);
+      if (!joined.ok) return;
+      await friend.next((s) => s.players.length === 2);
+      host.emit('room:leave');
+      const after = await friend.next((s) => s.players.length === 1);
+      expect(after.players[0]).toMatchObject({ name: 'Friend', isHost: true });
+      expect(server.rooms.get(created.code)).toBeDefined();
+      // The new host can run the table.
+      expect((await call(friend, 'host:addBot')).ok).toBe(true);
+    }
+  });
+
+  it('roulette: bets are checked by the server and paid after the spin', async () => {
+    const me = await client();
+    const created = await call<JoinResult>(me, 'room:create', { name: 'Ana', game: 'roulette', solo: true });
+    expect(created.ok).toBe(true);
+    expect((await call(me, 'roulette:bet', { spot: 'n:99', amount: 5 })).ok).toBe(false);
+    expect((await call(me, 'roulette:bet', { spot: 'red', amount: 25 })).ok).toBe(true);
+    const s = (await me.next((x) => (x as unknown as { players: { bets: unknown[] }[] }).players[0]!.bets.length === 1)) as unknown as { game: string };
+    expect(s.game).toBe('roulette');
+    expect((await call(me, 'action', { action: 'hit' })).ok).toBe(false);
+  });
+  it('you bring your own chips to a table, and can refill to 1,000', async () => {
+    const me = await client();
+    const created = await call<JoinResult>(me, 'room:create', { name: 'Ana', solo: true, chips: 2500 });
+    expect(created.ok).toBe(true);
+    const s = await me.next((x) => x.players.length === 1);
+    expect(s.players[0]!.balance).toBe(2500);
+    expect((await call(me, 'chips:reset')).ok).toBe(true);
+    expect((await me.next((x) => x.players[0]!.balance === 1000)).players[0]!.balance).toBe(1000);
   });
 });

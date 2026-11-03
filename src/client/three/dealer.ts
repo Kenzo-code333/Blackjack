@@ -238,9 +238,12 @@ export class Dealer {
 
     // Arms: hands ease toward targets; shoulders move with the torso.
     this.torso.updateMatrixWorld();
+    // Hand targets are in the coordinates of whatever holds the arms (the scene, or a table group).
+    const toLimbs = this.limbs.parent ? this.limbs.parent.matrixWorld.clone().invert() : null;
     for (const arm of Object.values(this.arms)) {
       const sx = arm.side === 'left' ? 0.2 : -0.2;
       arm.shoulder.set(sx, 0.43, 0).applyMatrix4(this.torso.matrixWorld);
+      if (toLimbs) arm.shoulder.applyMatrix4(toLimbs);
       arm.current.x = damp(arm.current.x, arm.target.x, 18, dt);
       arm.current.y = damp(arm.current.y, arm.target.y, 18, dt);
       arm.current.z = damp(arm.current.z, arm.target.z, 18, dt);

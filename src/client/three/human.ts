@@ -4,6 +4,7 @@
 
 import * as THREE from 'three';
 import { LOOK_OPTIONS, type Look } from '../../shared/protocol.js';
+import { addAccessory } from './accessories.js';
 
 const cache = new Map<string, THREE.Material>();
 
@@ -304,87 +305,6 @@ function addHair(group: THREE.Group, look: Look, hair: THREE.Material, hatted: b
     }
     // Bald: nothing.
   }
-}
-
-function addAccessory(group: THREE.Group, look: Look): void {
-  const extra = LOOK_OPTIONS.extra[look.extra] ?? 'None';
-  if (extra === 'Glasses' || extra === 'Sunglasses') {
-    const frame = mat('#2a2522', 0.35, { metalness: 0.4 });
-    for (const s of [-1, 1]) {
-      if (extra === 'Sunglasses') {
-        const lens = mesh(new THREE.CircleGeometry(0.018, 20), mat('#121418', 0.08, { metalness: 0.7 }), false);
-        lens.position.set(s * 0.032, 0.012, 0.094);
-        group.add(lens);
-      }
-      const ring = mesh(new THREE.TorusGeometry(0.018, 0.0018, 6, 24), frame, false);
-      ring.position.set(s * 0.032, 0.012, 0.093);
-      group.add(ring);
-      const arm = mesh(new THREE.BoxGeometry(0.002, 0.002, 0.09), frame, false);
-      arm.position.set(s * 0.083, 0.014, 0.05);
-      group.add(arm);
-    }
-    const bridge = mesh(new THREE.BoxGeometry(0.028, 0.0022, 0.0022), frame, false);
-    bridge.position.set(0, 0.016, 0.095);
-    group.add(bridge);
-  } else if (extra === 'Cap') {
-    const c = mat(outfitColor(look), 0.6);
-    const dome = mesh(new THREE.SphereGeometry(0.104, 24, 12, 0, Math.PI * 2, 0, Math.PI * 0.5), c);
-    dome.position.set(0, 0.045, -0.006);
-    dome.scale.set(0.93, 0.82, 1);
-    dome.rotation.x = -0.12;
-    const brim = mesh(new THREE.CylinderGeometry(0.075, 0.075, 0.006, 24, 1, false, -Math.PI / 2, Math.PI), mat(shade(outfitColor(look), -0.12), 0.6));
-    brim.position.set(0, 0.05, 0.075);
-    brim.scale.set(0.95, 1, 1);
-    brim.rotation.x = 0.18;
-    group.add(dome, brim);
-  } else if (extra === 'Beanie') {
-    // A snug knitted beanie: ribbed crown, a turned-up cuff just above the brows, a pom-pom.
-    const knit = new THREE.MeshStandardMaterial({ map: knitTexture(outfitColor(look)), roughness: 1 });
-    const crown = mesh(new THREE.SphereGeometry(R * 1.09, 32, 16, 0, Math.PI * 2, 0, Math.PI * 0.56), knit);
-    crown.scale.set(0.93, 1.12, 1.0);
-    crown.position.set(0, 0.03, -0.01);
-    crown.rotation.x = -0.32;
-    const cuffMat = new THREE.MeshStandardMaterial({ map: knitTexture(shade(outfitColor(look), -0.06), 2), roughness: 1 });
-    const cuff = mesh(new THREE.CylinderGeometry(R * 1.02, R * 1.05, 0.032, 32, 1, true), cuffMat);
-    cuff.scale.set(0.93, 1, 1.0);
-    cuff.position.set(0, 0.07, -0.018);
-    cuff.rotation.x = -0.32;
-    const pom = mesh(new THREE.IcosahedronGeometry(0.024, 2), new THREE.MeshStandardMaterial({ color: shade(outfitColor(look), 0.12), roughness: 1, flatShading: true }));
-    pom.position.set(0, 0.14, -0.06);
-    group.add(crown, cuff, pom);
-  }
-}
-
-const knitTextures = new Map<string, THREE.CanvasTexture>();
-
-/** Vertical ribs with a little stitch texture, for knitted things. */
-function knitTexture(color: string, repeat = 1): THREE.CanvasTexture {
-  const key = `${color}|${repeat}`;
-  const cached = knitTextures.get(key);
-  if (cached) return cached;
-  const c = document.createElement('canvas');
-  c.width = 256;
-  c.height = 64;
-  const ctx = c.getContext('2d')!;
-  ctx.fillStyle = color;
-  ctx.fillRect(0, 0, 256, 64);
-  for (let x = 0; x < 256; x += 8) {
-    const g = ctx.createLinearGradient(x, 0, x + 8, 0);
-    g.addColorStop(0, 'rgba(0,0,0,0.28)');
-    g.addColorStop(0.5, 'rgba(255,255,255,0.10)');
-    g.addColorStop(1, 'rgba(0,0,0,0.28)');
-    ctx.fillStyle = g;
-    ctx.fillRect(x, 0, 8, 64);
-  }
-  // Stitches: small offset dashes.
-  ctx.fillStyle = 'rgba(0,0,0,0.12)';
-  for (let y = 0; y < 64; y += 4) for (let x = (y / 4) % 2 ? 4 : 0; x < 256; x += 8) ctx.fillRect(x + 2, y, 4, 1);
-  const tex = new THREE.CanvasTexture(c);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-  tex.repeat.set(2 * repeat, 1);
-  knitTextures.set(key, tex);
-  return tex;
 }
 
 // ---------- Arms ----------

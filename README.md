@@ -1,11 +1,16 @@
-# The Velvet Ace: Blackjack & Texas Hold'em
+# The Velvet Ace: Blackjack, Roulette & Texas Hold'em
 
 A multiplayer casino in your browser, seen in first person from your seat. Make your avatar,
 pick a table nickname, then choose **Blackjack** (you against the dealer) or **Texas Hold'em
 poker** (you against the other players). Play alone, with bots, or with friends who just
 open a link. No accounts, no installs, play money only.
 
-- **Your avatar and nickname** first, then the **casino floor** to choose a game
+- **Your avatar and nickname** first, then a **3D casino floor** you walk around: go up to a
+  table to play, press the red **Leave** button to walk away (a simple list view is there too)
+- **Your chips go with you** from table to table (you start with 1,000); refill to 1,000 any
+  time, or **cash out** at the Cashier into your vault
+- **Roulette**: single-zero wheel with a real ball spin, tap the layout to bet, bots and friends
+- **Leaving is safe for hosts**: if the host leaves, the table keeps going and a friend becomes host
 - **Blackjack**: 6-deck shoe, dealer stands on soft 17, blackjack pays 3 to 2, up to 5 players
 - **Texas Hold'em**: no-limit, blinds 5/10, up to 6 players, side pots, showdowns, bots that bet and bluff
 - **How to play** pages for both games in short, very simple bullet points (also in-game under "?")
@@ -24,6 +29,14 @@ open a link. No accounts, no installs, play money only.
   (split aces get one card each). 21 after a split is not a blackjack.
 - Bets 5 to 500. Everyone starts with 1,000 chips and can reset any time between rounds.
 - 15 s betting countdown, 20 s per decision (then you stand automatically).
+
+## Roulette rules
+
+- European single-zero wheel. Straight up pays 35 to 1; dozens and columns 2 to 1; red/black,
+  odd/even, 1–18/19–36 pay 1 to 1. Zero loses all outside bets.
+- Chips of 5 to 500 per spot, 2,000 per spin. 25 s to bet, or press Spin when ready.
+
+The roulette engine is `src/game/roulette.ts` and `src/server/roulette-table.ts`.
 
 To change a rule, edit `DEFAULT_RULES` in `src/game/rules.ts` or `DEFAULT_TIMING` in `src/server/table.ts`.
 

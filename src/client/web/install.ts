@@ -66,6 +66,11 @@ function invitedBroker(code: string): number | undefined {
   return q.get('table')?.toUpperCase() === code.toUpperCase() && Number.isInteger(r) && r >= 0 && r < BROKERS.length ? r : undefined;
 }
 
+// A hosted table that everyone has left stops being relayed.
+server.onRoomClosed = (code) => {
+  if (hosting?.code === code) void api.stopHosting();
+};
+
 const g = globalThis as { __bjLocalSocket?: unknown; __bjPreview?: OnlineApi };
 g.__bjLocalSocket = switcher;
 g.__bjPreview = api;

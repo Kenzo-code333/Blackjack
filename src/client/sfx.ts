@@ -191,6 +191,48 @@ function tableTap(): Mono {
   return fade(normalize(x, 0.6), 0.5, 30);
 }
 
+/**
+ * A roulette spin, timed like the 3D ball: it rolls around the wooden track with a
+ * whirring rumble that slows, clicks over the diamonds as it drops, then rattles
+ * between the metal frets and settles in a pocket.
+ */
+function ballSpin(seconds: number): Mono {
+  const x = new Float32Array(Math.floor((seconds + 0.6) * SR));
+  const rollEnd = seconds * 0.56;
+  const dropEnd = seconds * 0.86;
+  // Rolling: noise through a resonant band, pulsing once per lap (laps slow down).
+  let phase = 0;
+  let lp = 0;
+  for (let i = 0; i < dropEnd * SR; i++) {
+    const t = i / SR;
+    const u = t / rollEnd;
+    const speed = Math.max(0.15, 1 - 0.75 * Math.min(1, u)) * (t > rollEnd ? 0.5 : 1);
+    phase += (2.6 * speed) / SR;
+    const lap = 0.75 + 0.25 * Math.sin(phase * Math.PI * 2);
+    const env = Math.min(1, t / 0.25) * (t < rollEnd ? 1 - 0.35 * u : Math.max(0, 0.65 - (t - rollEnd) / (dropEnd - rollEnd)));
+    const n = Math.random() * 2 - 1;
+    lp += (n - lp) * (0.05 + 0.08 * speed);
+    x[i]! += lp * env * lap * 0.9;
+  }
+  biquad(x, 'bandpass', 900, 0.7);
+  // Dropping: a few hard ticks off the diamonds.
+  for (const k of [0.04, 0.26, 0.47, 0.66]) {
+    const at = rollEnd + (dropEnd - rollEnd) * k;
+    modal(x, at, [[rand(2400, 3200), 14, 1], [rand(5200, 6400), 6, 0.5]], 0.5);
+  }
+  // In the pocket: quick, quieter rattles that come closer together, then a last settle.
+  let at = dropEnd;
+  let gap = 0.16;
+  let g = 0.55;
+  while (at < seconds + 0.2 && g > 0.04) {
+    modal(x, at, [[rand(3300, 4200), 9, 1], [rand(6500, 7600), 4, 0.4], [rand(700, 900), 20, 0.25]], g);
+    at += gap;
+    gap *= 0.74;
+    g *= 0.72;
+  }
+  return fade(normalize(x, 0.55), 30, 80);
+}
+
 function stereoize(l: Mono, r: Mono, ctx: BaseAudioContext): AudioBuffer {
   const buf = ctx.createBuffer(2, Math.max(l.length, r.length), SR);
   buf.copyToChannel(l as Float32Array<ArrayBuffer>, 0);
@@ -318,6 +360,15 @@ export interface SfxBank {
   applause: AudioBuffer;
   ooh: AudioBuffer;
   room: AudioBuffer;
+  /** Made the first time it's needed: it's long. */
+  ballSpin?: AudioBuffer;
+}
+
+export function buildBallSpin(ctx: BaseAudioContext, seconds: number): AudioBuffer {
+  const x = ballSpin(seconds);
+  const b = ctx.createBuffer(1, x.length, SR);
+  b.copyToChannel(x as Float32Array<ArrayBuffer>, 0);
+  return b;
 }
 
 export function buildSfxBank(ctx: BaseAudioContext): SfxBank {

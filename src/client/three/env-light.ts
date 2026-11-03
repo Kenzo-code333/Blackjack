@@ -1,0 +1,17 @@
+// Soft image-based lighting: a blurred "room" reflected in lacquered wood, chrome and
+// glossy chips, which makes materials look real instead of plastic.
+
+import * as THREE from 'three';
+import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
+
+export function addEnvironmentLight(renderer: THREE.WebGLRenderer, scene: THREE.Scene, intensity = 0.3): void {
+  try {
+    const pmrem = new THREE.PMREMGenerator(renderer);
+    const env = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+    pmrem.dispose();
+    scene.environment = env;
+    scene.environmentIntensity = intensity;
+  } catch (err) {
+    console.warn('No environment lighting', err);
+  }
+}

@@ -5,7 +5,7 @@
 // scene snaps to the exact state, so it can never show something the server didn't say.
 
 import * as THREE from 'three';
-import type { AnyState, PokerEvent, PokerState, TableEvent } from '../../shared/protocol.js';
+import type { AnyEvent, AnyState, PokerEvent, PokerState, TableEvent } from '../../shared/protocol.js';
 import type { Sound } from '../audio.js';
 import { money } from '../format.js';
 import type { TableRenderer } from '../renderer.js';
@@ -193,47 +193,12 @@ export class PokerScene3D implements TableRenderer {
   }
 
   private buildTable(): THREE.Group {
-    const g = new THREE.Group();
-    const shape = new THREE.Shape();
-    shape.absellipse(0, 0, RX, RZ, 0, Math.PI * 2, false, 0);
-    const feltGeo = new THREE.ShapeGeometry(shape, 96);
-    feltGeo.rotateX(-Math.PI / 2);
-    const pos = feltGeo.attributes.position!;
-    const uv = feltGeo.attributes.uv!;
-    for (let i = 0; i < pos.count; i++) uv.setXY(i, (pos.getX(i) + RX) / (2 * RX), 1 - (pos.getZ(i) + RZ) / (2 * RZ));
-    const felt = new THREE.Mesh(feltGeo, new THREE.MeshStandardMaterial({ map: pokerFelt(), roughness: 0.92 }));
-    felt.position.y = TABLE_Y;
-    felt.receiveShadow = true;
-    const woodMat = new THREE.MeshStandardMaterial({ map: woodTexture(), color: 0xd9a77a, roughness: 0.45 });
-    const outer = new THREE.Shape();
-    outer.absellipse(0, 0, RX + 0.08, RZ + 0.08, 0, Math.PI * 2, false, 0);
-    const body = new THREE.Mesh(new THREE.ExtrudeGeometry(outer, { depth: 0.12, bevelEnabled: false, curveSegments: 64 }), woodMat);
-    body.rotation.x = -Math.PI / 2;
-    body.position.y = TABLE_Y - 0.121;
-    body.castShadow = body.receiveShadow = true;
-    const railPts: THREE.Vector3[] = [];
-    for (let i = 0; i <= 96; i++) {
-      const a = (i / 96) * Math.PI * 2;
-      railPts.push(new THREE.Vector3(Math.cos(a) * (RX + 0.03), TABLE_Y + 0.03, Math.sin(a) * (RZ + 0.03)));
-    }
-    const rail = new THREE.Mesh(
-      new THREE.TubeGeometry(new THREE.CatmullRomCurve3(railPts, true), 160, 0.055, 16, true),
-      new THREE.MeshStandardMaterial({ color: 0x2a1610, roughness: 0.38, metalness: 0.1 }),
-    );
-    rail.castShadow = rail.receiveShadow = true;
-    const pedestal = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.36, TABLE_Y - 0.12, 20), woodMat);
-    pedestal.position.y = (TABLE_Y - 0.12) / 2;
-    // The deck by the dealer.
-    const deck = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.02, CARD_H), new THREE.MeshStandardMaterial({ color: 0x7d1622, roughness: 0.6 }));
-    deck.position.copy(DECK_POS);
-    deck.castShadow = true;
-    g.add(felt, body, rail, pedestal, deck);
-    return g;
+    return buildPokerTable();
   }
 
   // ---------- TableRenderer ----------
 
-  update(anyState: AnyState, anyEvents: (TableEvent | PokerEvent)[], me: string | null): void {
+  update(anyState: AnyState, anyEvents: AnyEvent[], me: string | null): void {
     if (anyState.game !== 'poker') return;
     const state = anyState;
     const events = anyEvents as PokerEvent[];
@@ -705,4 +670,44 @@ function pokerFelt(): THREE.CanvasTexture {
       ctx.strokeRect(x - cw / 2 - 4, y - ch / 2 - 4, cw + 8, ch + 8);
     }
   });
+}
+
+/** The oval poker table: felt, wooden body, padded rail, pedestal and the deck. */
+export function buildPokerTable(): THREE.Group {
+  const g = new THREE.Group();
+  const shape = new THREE.Shape();
+  shape.absellipse(0, 0, RX, RZ, 0, Math.PI * 2, false, 0);
+  const feltGeo = new THREE.ShapeGeometry(shape, 96);
+  feltGeo.rotateX(-Math.PI / 2);
+  const pos = feltGeo.attributes.position!;
+  const uv = feltGeo.attributes.uv!;
+  for (let i = 0; i < pos.count; i++) uv.setXY(i, (pos.getX(i) + RX) / (2 * RX), 1 - (pos.getZ(i) + RZ) / (2 * RZ));
+  const felt = new THREE.Mesh(feltGeo, new THREE.MeshStandardMaterial({ map: pokerFelt(), roughness: 0.92 }));
+  felt.position.y = TABLE_Y;
+  felt.receiveShadow = true;
+  const woodMat = new THREE.MeshStandardMaterial({ map: woodTexture(), color: 0xd9a77a, roughness: 0.45 });
+  const outer = new THREE.Shape();
+  outer.absellipse(0, 0, RX + 0.08, RZ + 0.08, 0, Math.PI * 2, false, 0);
+  const body = new THREE.Mesh(new THREE.ExtrudeGeometry(outer, { depth: 0.12, bevelEnabled: false, curveSegments: 64 }), woodMat);
+  body.rotation.x = -Math.PI / 2;
+  body.position.y = TABLE_Y - 0.121;
+  body.castShadow = body.receiveShadow = true;
+  const railPts: THREE.Vector3[] = [];
+  for (let i = 0; i <= 96; i++) {
+    const a = (i / 96) * Math.PI * 2;
+    railPts.push(new THREE.Vector3(Math.cos(a) * (RX + 0.03), TABLE_Y + 0.03, Math.sin(a) * (RZ + 0.03)));
+  }
+  const rail = new THREE.Mesh(
+    new THREE.TubeGeometry(new THREE.CatmullRomCurve3(railPts, true), 160, 0.055, 16, true),
+    new THREE.MeshStandardMaterial({ color: 0x2a1610, roughness: 0.38, metalness: 0.1 }),
+  );
+  rail.castShadow = rail.receiveShadow = true;
+  const pedestal = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.36, TABLE_Y - 0.12, 20), woodMat);
+  pedestal.position.y = (TABLE_Y - 0.12) / 2;
+  // The deck by the dealer.
+  const deck = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.02, CARD_H), new THREE.MeshStandardMaterial({ color: 0x7d1622, roughness: 0.6 }));
+  deck.position.copy(DECK_POS);
+  deck.castShadow = true;
+  g.add(felt, body, rail, pedestal, deck);
+  return g;
 }

@@ -7,8 +7,9 @@ import { fileURLToPath } from 'node:url';
 import express from 'express';
 import { Server, type Socket } from 'socket.io';
 import type { Action } from '../game/index.js';
-import { type Ack, type ClientToServer, type JoinResult, type PokerAction, type ServerToClient, cleanLook } from '../shared/protocol.js';
+import { type Ack, type ClientToServer, type JoinResult, type PokerAction, type ServerToClient, cleanChips, cleanLook } from '../shared/protocol.js';
 import { PokerTable } from './poker-table.js';
+import { RouletteTable } from './roulette-table.js';
 import { Table } from './table.js';
 import { DEFAULT_ROOM_SETTINGS, RateLimiter, type Room, RoomManager, type RoomSettings, cleanChat, cleanName, normalizeCode } from './rooms.js';
 
@@ -119,11 +120,11 @@ export function createGameServer(settings: Partial<RoomSettings> = {}): GameServ
       if (typeof ack !== 'function') return;
       const name = cleanName(payload?.name);
       if (!name) return ack({ ok: false, error: 'Please enter a name' });
-      const game = payload?.game === 'poker' ? 'poker' : 'blackjack';
-      const bots = Math.max(0, Math.min(game === 'poker' ? 5 : 4, Math.floor(Number(payload?.bots) || 0)));
+      const game = payload?.game === 'poker' || payload?.game === 'roulette' ? payload.game : 'blackjack';
+      const bots = Math.max(0, Math.min(game === 'blackjack' ? 4 : 5, Math.floor(Number(payload?.bots) || 0)));
       const room = rooms.create(Boolean(payload?.solo), bots > 0, game);
       wireSystemChat(room);
-      const player = room.table.addPlayer(name, cleanLook(payload?.look));
+      const player = room.table.addPlayer(name, cleanLook(payload?.look), null, cleanChips(payload?.chips));
       for (let i = 0; i < bots; i++) room.table.addBot(player.id);
       enter(room, player.id, ack);
     });
@@ -151,7 +152,7 @@ export function createGameServer(settings: Partial<RoomSettings> = {}): GameServ
       if (room.table.solo) return ack({ ok: false, error: 'That is a private solo table' });
       const name = cleanName(payload?.name);
       if (!name) return ack({ ok: false, error: 'Please enter a name' });
-      const player = room.table.addPlayer(name, cleanLook(payload?.look));
+      const player = room.table.addPlayer(name, cleanLook(payload?.look), null, cleanChips(payload?.chips));
       room.system(player.seat === null ? `${name} is watching (table full)` : `${name} sat down`);
       enter(room, player.id, ack);
     });
@@ -192,6 +193,15 @@ export function createGameServer(settings: Partial<RoomSettings> = {}): GameServ
         return room.table.act(playerId, p.action, Number(p?.amount) || 0);
       }),
     );
+    /** Roulette-only moves. */
+    const onRl = (room: Room, fn: (t: RouletteTable) => string | null) => (room.table instanceof RouletteTable ? fn(room.table) : 'Not a roulette table');
+    socket.on(
+      'roulette:bet',
+      handle(({ room, playerId }, p: { spot: string; amount: number }) => onRl(room, (t) => t.placeBet(playerId, p?.spot, p?.amount))),
+    );
+    socket.on('roulette:clear', handle(({ room, playerId }) => onRl(room, (t) => t.clearBets(playerId))));
+    socket.on('roulette:rebet', handle(({ room, playerId }) => onRl(room, (t) => t.rebet(playerId))));
+    socket.on('roulette:ready', handle(({ room, playerId }) => onRl(room, (t) => t.setReady(playerId))));
     socket.on(
       'player:look',
       handle(({ room, playerId }, p: { look: unknown }) => room.table.setLook(playerId, cleanLook(p?.look))),

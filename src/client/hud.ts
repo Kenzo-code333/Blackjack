@@ -2,10 +2,11 @@
 // (2D or 3D) and never draws the table itself.
 
 import type { Action, Card } from '../game/index.js';
-import { type AnyState, CHIP_VALUES, type ChatMessage, type GameKind, type PokerPlayer, type PokerState, type PublicPlayer, type PublicState } from '../shared/protocol.js';
+import { type AnyState, CHIP_VALUES, type ChatMessage, type GameKind, type PokerPlayer, type PokerState, type PublicPlayer, type PublicState, type RoulettePlayer, type RouletteState } from '../shared/protocol.js';
 import { h, show, toast } from './dom.js';
-import { OUTCOME_TEXT, SUIT_SYMBOL, bannerText, isRed, money, pokerBanner } from './format.js';
+import { OUTCOME_TEXT, SUIT_SYMBOL, bannerText, isRed, money, pocketName, pokerBanner, rouletteBanner } from './format.js';
 import { PokerControls } from './hud-poker.js';
+import { RouletteControls } from './hud-roulette.js';
 import { rulesContent } from './rules.js';
 import type { Net } from './net.js';
 
@@ -42,6 +43,8 @@ export class Hud {
   readonly el: HTMLElement;
   private state: AnyState | null = null;
   private poker: PokerControls | null = null;
+  /** Roulette: the chip picker and buttons (the 3D layout calls `roulette.bet`). */
+  roulette: RouletteControls | null = null;
   private lastBet = 0;
   private lastPhase = '';
   private myCardsKey = '';
@@ -120,7 +123,7 @@ export class Hud {
     const top = h(
       'header',
       { class: 'topbar' },
-      h('button', { class: 'icon-btn', title: 'Leave table', 'aria-label': 'Leave table', onclick: press(() => opts.onLeave()) }, '←'),
+      h('button', { class: 'leave-btn', title: 'Leave the table and go back to the casino floor', 'aria-label': 'Leave table', onclick: press(() => opts.onLeave()) }, h('span', { class: 'leave-icon', 'aria-hidden': 'true' }, '⏏'), h('span', { class: 'leave-word' }, 'Leave')),
       h('div', { class: 'table-code' }, this.statusDot, h('span', { class: 'code-label' }, 'Table'), h('strong', {}, code)),
       inviteBtn,
       h('div', { class: 'spacer' }),
@@ -181,19 +184,33 @@ export class Hud {
     this.seatRow.append(h('button', { class: 'btn gold', onclick: press(() => send(net.takeSeat())) }, 'Take a seat'));
     this.brokeRow.append(
       h('span', {}, 'Out of chips?'),
-      h('button', { class: 'btn gold', onclick: press(() => send(net.resetChips())) }, 'Reset to 1,000'),
+      h('button', { class: 'btn gold', onclick: press(() => send(net.resetChips())) }, 'Refill to 1,000'),
     );
 
-    const wallet = h('div', { class: 'wallet' }, h('span', {}, 'Chips ', this.balanceEl), h('span', {}, 'Bet ', this.betEl));
+    const refill = h(
+      'button',
+      {
+        class: 'refill-btn',
+        title: 'Refill your chips to 1,000',
+        'aria-label': 'Refill chips to 1,000',
+        onclick: press(() => {
+          if (confirm('Refill your chips back to 1,000?')) void send(net.resetChips());
+        }),
+      },
+      '↻',
+    );
+    const wallet = h('div', { class: 'wallet' }, h('span', {}, 'Chips ', this.balanceEl, refill), h('span', {}, 'Bet ', this.betEl));
     if (opts.game === 'poker') this.poker = new PokerControls(net, press);
+    if (opts.game === 'roulette') this.roulette = new RouletteControls(net, press, opts.play);
     const controls = h(
       'footer',
       { class: 'controls' },
-      this.poker ? this.poker.cards : this.myCards,
+      this.poker ? this.poker.cards : this.roulette ? this.roulette.info : this.myCards,
       wallet,
       this.hostRow,
       this.poker?.raiseRow ?? null,
       this.poker?.row ?? null,
+      this.roulette?.row ?? null,
       this.insuranceRow,
       this.actionsRow,
       this.bettingRow,
@@ -234,7 +251,7 @@ export class Hud {
       h(
         'div',
         { class: 'panel-foot' },
-        h('button', { class: 'btn ghost small', onclick: press(() => send(net.resetChips())) }, 'Reset my chips'),
+        h('button', { class: 'btn ghost small', onclick: press(() => send(net.resetChips())) }, 'Refill to 1,000 chips'),
         h('button', { class: 'btn ghost small', onclick: press(() => opts.onLeave()) }, 'Leave table'),
       ),
     );
@@ -370,6 +387,10 @@ export class Hud {
       if (this.poker?.key(e.key.toLowerCase())) e.preventDefault();
       return;
     }
+    if (s.game === 'roulette') {
+      if (this.roulette?.key(e.key.toLowerCase())) e.preventDefault();
+      return;
+    }
     const action = ACTION_KEYS[e.key.toLowerCase()];
     if (action && s.turn?.playerId === this.net.me && s.turn.actions.includes(action)) {
       this.actionButtons.get(action)!.click();
@@ -393,6 +414,7 @@ export class Hud {
 
   update(anyState: AnyState): void {
     if (anyState.game === 'poker') return this.updatePoker(anyState);
+    if (anyState.game === 'roulette') return this.updateRoulette(anyState);
     const state = anyState;
     const me = state.players.find((p) => p.id === this.net.me);
     // Remember what we bet so "Rebet" can repeat it.
@@ -496,9 +518,41 @@ export class Hud {
     this.renderPlayers(state);
   }
 
+  /** Roulette: chips, quick bets, Spin, and the host's Start / Add bot buttons. */
+  private updateRoulette(state: RouletteState): void {
+    this.state = state;
+    const me = state.players.find((p) => p.id === this.net.me);
+    this.banner.textContent = rouletteBanner(state, this.net.me);
+    this.inviteBtn.hidden = state.solo || !this.opts.invite;
+    this.balanceEl.textContent = me ? money(me.balance) : '–';
+    const staked = me ? me.bets.reduce((s, b) => s + b.amount, 0) : 0;
+    this.betEl.textContent = money(state.phase === 'results' ? me?.staked ?? 0 : staked);
+    for (const row of [this.bettingRow, this.actionsRow, this.insuranceRow, this.myCards]) row.hidden = true;
+    this.roulette!.update(state, this.net.me);
+    const isHost = me?.isHost ?? false;
+    const seated = state.players.filter((p) => p.seat !== null);
+    const canStart = isHost && !state.solo && !state.running && state.phase === 'waiting';
+    const canAddBot = isHost && !state.solo && seated.length < 6 && (state.phase === 'waiting' || state.phase === 'betting');
+    show(this.hostRow, canStart || canAddBot);
+    this.hostBtn.hidden = !canStart;
+    this.hostBtn.textContent = 'Open the betting';
+    this.hostBtn.className = 'btn gold big';
+    this.addBotBtn.hidden = !canAddBot;
+    show(this.seatRow, Boolean(me && me.seat === null && seated.length < 6));
+    show(this.brokeRow, Boolean(me && me.seat !== null && me.balance + staked < state.limits.minBet && state.phase !== 'spinning'));
+    const key = `${state.round}`;
+    if (state.phase === 'results' && me && me.won > 0 && this.celebratedHand !== key) {
+      this.celebratedHand = key;
+      const straight = me.won >= me.staked * 10;
+      this.celebrateText(straight ? 'Straight up!' : 'Winner!', `${pocketName(state.result ?? 0)} · ${money(me.won)} chips back`, straight);
+      this.opts.play?.('chip');
+    }
+    this.renderPlayers(state);
+  }
+
   private renderPlayers(state: AnyState): void {
     const amHost = state.hostId === this.net.me;
-    const row = (p: PublicPlayer | PokerPlayer) =>
+    const row = (p: PublicPlayer | PokerPlayer | RoulettePlayer) =>
       h(
         'li',
         { class: p.connected ? '' : 'away' },
@@ -517,7 +571,7 @@ export class Hud {
             )
           : null,
       );
-    this.playersList.replaceChildren(...(state.players as (PublicPlayer | PokerPlayer)[]).map(row));
+    this.playersList.replaceChildren(...(state.players as (PublicPlayer | PokerPlayer | RoulettePlayer)[]).map(row));
   }
 
   addChat(msg: ChatMessage): void {

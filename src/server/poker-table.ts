@@ -151,7 +151,7 @@ export class PokerTable {
     return order.find((s) => s < POKER_SEATS && !taken.has(s)) ?? null;
   }
 
-  addPlayer(name: string, look?: Look, bot: BotPersonality | null = null): PokerSeat {
+  addPlayer(name: string, look?: Look, bot: BotPersonality | null = null, chips?: number): PokerSeat {
     const p: PokerSeat = {
       id: newId(6),
       token: newId(18),
@@ -161,7 +161,7 @@ export class PokerTable {
       bot,
       connected: true,
       joinedAt: Date.now(),
-      balance: this.startingStack,
+      balance: chips ?? this.startingStack,
       hole: [],
       bet: 0,
       total: 0,

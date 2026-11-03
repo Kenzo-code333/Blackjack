@@ -50,6 +50,16 @@ export function cleanLook(raw: unknown): Look {
 }
 export const CHIP_VALUES = [5, 25, 100, 500] as const;
 
+/** Everyone walks in with this many chips, and can refill to it any time. */
+export const STARTING_CHIPS = 1000;
+
+/** The chips a player brings to a table (their wallet). Play money, so any sane amount is fine. */
+export function cleanChips(raw: unknown): number {
+  const n = Math.floor(Number(raw));
+  if (!Number.isFinite(n) || n < 0) return STARTING_CHIPS;
+  return Math.min(n, 10_000_000);
+}
+
 export interface PublicHand {
   cards: Card[];
   bet: number;
@@ -83,7 +93,7 @@ export interface PublicPlayer {
   insurancePayout: number | null;
 }
 
-export type GameKind = 'blackjack' | 'poker';
+export type GameKind = 'blackjack' | 'poker' | 'roulette';
 
 export interface PublicState {
   game: 'blackjack';
@@ -197,11 +207,72 @@ export type PokerEvent =
   | { type: 'win'; playerId: string; amount: number }
   | { type: 'clear' };
 
-export type AnyState = PublicState | PokerState;
+// ---------- Roulette ----------
+
+export const ROULETTE_SEATS = 6;
+export type RoulettePhase = 'waiting' | 'betting' | 'spinning' | 'results';
+
+export interface RouletteBet {
+  /** "n:17", "red", "dozen:2"… (see src/game/roulette.ts). */
+  spot: string;
+  amount: number;
+}
+
+export interface RoulettePlayer {
+  id: string;
+  name: string;
+  seat: number | null;
+  bot: boolean;
+  look: Look;
+  balance: number;
+  bets: RouletteBet[];
+  /** Pressed "Spin": done betting this round. */
+  ready: boolean;
+  connected: boolean;
+  isHost: boolean;
+  /** Last round: total returned (stake + winnings) and what was staked. */
+  won: number;
+  staked: number;
+  /** Has bets from the last round to repeat. */
+  canRebet: boolean;
+}
+
+export interface RouletteState {
+  game: 'roulette';
+  code: string;
+  solo: boolean;
+  phase: RoulettePhase;
+  round: number;
+  deadline: number | null;
+  timerMs: number | null;
+  serverTime: number;
+  hostId: string | null;
+  players: RoulettePlayer[];
+  /** The winning number of the last spin (shown during results). */
+  result: number | null;
+  /** Latest first. */
+  history: number[];
+  /** While spinning: the number the ball will land on, and how long the spin lasts. */
+  spin: { number: number; durationMs: number; endsAt: number } | null;
+  running: boolean;
+  limits: { minBet: number; maxSpot: number; maxTotal: number; startingBalance: number };
+}
+
+export type RouletteEvent =
+  | { type: 'rbet'; playerId: string; spot: string; amount: number }
+  | { type: 'rclear'; playerId: string }
+  /** The dealer waves a hand over the layout: "No more bets". */
+  | { type: 'nomore' }
+  | { type: 'spin'; number: number; durationMs: number }
+  | { type: 'result'; number: number; winners: { playerId: string; amount: number }[] }
+  | { type: 'clear' };
+
+export type AnyState = PublicState | PokerState | RouletteState;
+export type AnyEvent = TableEvent | PokerEvent | RouletteEvent;
 
 export interface StateMessage {
   state: AnyState;
-  events: (TableEvent | PokerEvent)[];
+  events: AnyEvent[];
 }
 
 export interface ChatMessage {
@@ -223,9 +294,9 @@ export interface JoinResult {
 
 export interface ClientToServer {
   /** `bots`: how many computer players to seat with you (0–4). */
-  'room:create': (p: { name: string; solo?: boolean; bots?: number; look?: Look; game?: GameKind }, ack: Ack<JoinResult>) => void;
+  'room:create': (p: { name: string; solo?: boolean; bots?: number; look?: Look; game?: GameKind; chips?: number }, ack: Ack<JoinResult>) => void;
   /** `rejoin`: automatic reconnect with a saved token; fails instead of creating a new player. */
-  'room:join': (p: { code: string; name: string; token?: string; rejoin?: boolean; look?: Look }, ack: Ack<JoinResult>) => void;
+  'room:join': (p: { code: string; name: string; token?: string; rejoin?: boolean; look?: Look; chips?: number }, ack: Ack<JoinResult>) => void;
   'player:look': (p: { look: Look }, ack: Ack) => void;
   'host:addBot': (ack: Ack) => void;
   'room:leave': () => void;
@@ -238,6 +309,10 @@ export interface ClientToServer {
   'chips:reset': (ack: Ack) => void;
   'host:start': (ack: Ack) => void;
   'host:kick': (p: { playerId: string }, ack: Ack) => void;
+  'roulette:bet': (p: { spot: string; amount: number }, ack: Ack) => void;
+  'roulette:clear': (ack: Ack) => void;
+  'roulette:rebet': (ack: Ack) => void;
+  'roulette:ready': (ack: Ack) => void;
   'chat:send': (p: { text: string }, ack: Ack) => void;
   /** Poker: fold, check, call, raise to `amount`, or go all in. */
   'poker:act': (p: { action: PokerAction; amount?: number }, ack: Ack) => void;

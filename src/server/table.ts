@@ -139,13 +139,13 @@ export class Table {
 
   // ---------- Players ----------
 
-  addPlayer(name: string, look?: Look, bot: BotPersonality | null = null): Player {
+  addPlayer(name: string, look?: Look, bot: BotPersonality | null = null, chips?: number): Player {
     const player: Player = {
       id: newId(6),
       token: newId(18),
       name,
       seat: this.freeSeat(),
-      balance: this.rules.startingBalance,
+      balance: chips ?? this.rules.startingBalance,
       bet: 0,
       hands: [],
       results: [],

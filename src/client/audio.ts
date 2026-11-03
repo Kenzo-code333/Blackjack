@@ -6,7 +6,7 @@
 //
 // Browsers only allow audio after the user interacts, so `unlock()` runs on the first tap.
 
-import { type SfxBank, buildSfxBank } from './sfx.js';
+import { type SfxBank, buildBallSpin, buildSfxBank } from './sfx.js';
 
 export type SoundName =
   | 'card'
@@ -22,7 +22,8 @@ export type SoundName =
   | 'lose'
   | 'twentyone'
   | 'blackjack'
-  | 'applause';
+  | 'applause'
+  | 'ballSpin';
 
 export interface PlayOptions {
   /** Seconds from now. */
@@ -271,6 +272,13 @@ export class Sound {
         break;
       case 'applause':
         sample(bank?.applause, 0.5);
+        break;
+      case 'ballSpin':
+        // Timed to the 3D spin; `rate` < 1 is not used so the timing stays exact.
+        if (bank) {
+          bank.ballSpin ??= buildBallSpin(this.ctx!, 8.5);
+          this.sample(bank.ballSpin, t, { gain: 0.8 * (o.gain ?? 1), pan: o.pan ?? 0, rate: 1 });
+        }
         break;
       case 'lose':
         this.bell(out, t, midi(64), 0.04);
