@@ -5,6 +5,7 @@
 import * as THREE from 'three';
 import { LOOK_OPTIONS, type Look } from '../../shared/protocol.js';
 import { addAccessory } from './accessories.js';
+import { mergeStatic } from './bake.js';
 
 const cache = new Map<string, THREE.Material>();
 
@@ -214,6 +215,7 @@ export function buildHead(look: Look): Head {
   const extra = LOOK_OPTIONS.extra[look.extra] ?? 'None';
   addHair(group, look, hair, extra === 'Cap' || extra === 'Beanie');
   addAccessory(group, look);
+  mergeStatic(group, lids);
   return { group, lids };
 }
 
@@ -443,6 +445,10 @@ export function buildSeatedBody(look: Look, railHeight: number): SeatedBody {
   arms.right.target.copy(rest.right);
   arms.left.solve();
   arms.right.solve();
+  // Rigid parts become one mesh per material (far fewer draw calls per person).
+  for (const arm of [arms.left, arms.right]) mergeStatic(arm.hand);
+  mergeStatic(torso, [head.group, arms.left.upper, arms.left.lower, arms.left.hand, arms.right.upper, arms.right.lower, arms.right.hand]);
+  mergeStatic(group, [torso]);
   return { group, torso, head, headTop: 0.62 + 0.6 + 0.12, arms, rest };
 }
 

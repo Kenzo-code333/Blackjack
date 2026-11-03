@@ -4,6 +4,7 @@
 import * as THREE from 'three';
 import { DEALER_POS, TABLE_Y } from './layout.js';
 import type { Look } from '../../shared/protocol.js';
+import { mergeStatic } from './bake.js';
 import { buildHead, skinColor } from './human.js';
 import { type Animator, damp, ease } from './tween.js';
 
@@ -153,6 +154,9 @@ export class Dealer {
     face.group.scale.setScalar(1.08);
     this.head.add(face.group);
     this.lids.push(...face.lids);
+    // Rigid parts become one mesh per material (fewer draw calls).
+    mergeStatic(this.torso, [this.head]);
+    mergeStatic(this.group, [this.torso]);
 
     this.arms = {
       left: new Arm('left', shirt, skin, this.limbs),

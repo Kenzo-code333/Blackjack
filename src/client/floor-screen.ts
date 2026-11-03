@@ -6,7 +6,7 @@ import { type GameKind, STARTING_CHIPS } from '../shared/protocol.js';
 import { h, toast } from './dom.js';
 import { money } from './format.js';
 import { RULES } from './rules.js';
-import { CASINO_NAME, type LobbyActions, characterPreview, stepper } from './screens.js';
+import { CASINO_NAME, type LobbyActions, avatarBadge, stepper } from './screens.js';
 import { prefs, store } from './storage.js';
 import type { CasinoFloor3D, Station, StationId } from './three/casino-floor.js';
 
@@ -38,7 +38,7 @@ export function floorScreen(a: FloorScreenOptions): { el: HTMLElement; dispose()
   };
   const stage = h('div', { class: 'floor-stage' });
   const loading = h('div', { class: 'loading floor-loading' }, h('div', { class: 'spinner' }), `Opening the doors of ${CASINO_NAME}…`);
-  const me = characterPreview(prefs.look, 'mini');
+  const me = { el: avatarBadge(prefs.look), dispose: () => {} };
   const profile = h(
     'button',
     { class: 'profile-chip', onclick: a.editProfile, 'aria-label': 'Edit your avatar and nickname' },
@@ -223,7 +223,13 @@ export function floorScreen(a: FloorScreenOptions): { el: HTMLElement; dispose()
         stick.style.top = `${y}px`;
         knob.style.transform = `translate(${dx}px, ${dy}px)`;
       };
-      loading.remove();
+      // The doors open once the room can draw smoothly.
+      await floor.ready;
+      document.body.dataset.floorReady = '1';
+      if (location.search.includes('debug')) (globalThis as { bjFloor?: unknown }).bjFloor = floor;
+      if (disposed) return;
+      loading.classList.add('done');
+      setTimeout(() => loading.remove(), 600);
       setTimeout(() => hint.classList.add('fade'), 9000);
     } catch (err) {
       console.warn('3D floor unavailable', err);
@@ -235,6 +241,7 @@ export function floorScreen(a: FloorScreenOptions): { el: HTMLElement; dispose()
     el,
     dispose() {
       disposed = true;
+      delete document.body.dataset.floorReady;
       floor?.dispose();
       me.dispose();
     },

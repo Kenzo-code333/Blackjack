@@ -74,6 +74,19 @@ export function characterPreview(look: Look, cls = ''): { el: HTMLElement; setLo
   };
 }
 
+/** A flat little portrait of your character (no 3D), for places where speed matters. */
+export function avatarBadge(look: Look): HTMLElement {
+  const color = (list: readonly string[], i: number) => list[i] ?? list[0]!;
+  const bald = LOOK_OPTIONS.hair[look.hair] === 'Bald';
+  return h(
+    'span',
+    { class: 'avatar-badge', 'aria-hidden': 'true', style: `--skin:${color(LOOK_OPTIONS.skin, look.skin)};--hair:${color(LOOK_OPTIONS.hairColor, look.hairColor)};--outfit:${color(LOOK_OPTIONS.outfit, look.outfit)}` },
+    h('span', { class: 'ab-body' }),
+    h('span', { class: 'ab-head' }),
+    bald ? null : h('span', { class: 'ab-hair' }),
+  );
+}
+
 // ---------- Profile (the home page) ----------
 
 /** Your avatar and nickname. "Enter the casino" takes you to the lobby. */

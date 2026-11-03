@@ -9,7 +9,8 @@ import * as THREE from 'three';
 import { LOOK_OPTIONS, type GameKind, type Look, randomLook } from '../../shared/protocol.js';
 import { Avatar } from './avatar.js';
 import { Dealer } from './dealer.js';
-import { addEnvironmentLight } from './env-light.js';
+import { addEnvironmentLight, warmUp } from './env-light.js';
+import { mergeStatic } from './bake.js';
 import { buildEnvironment } from './environment.js';
 import { TABLE_Y } from './layout.js';
 import { buildPokerTable } from './poker-scene.js';
@@ -68,18 +69,19 @@ export class CasinoFloor3D {
   private readonly blinkers: { mat: THREE.MeshBasicMaterial | THREE.MeshStandardMaterial; phase: number; speed: number }[] = [];
   private readonly pickables: { mesh: THREE.Object3D; station: Station }[] = [];
   private readonly signs: { sign: THREE.Sprite; station: Station }[] = [];
-  private readonly shadowLights: THREE.SpotLight[] = [];
   private readonly extras: THREE.Object3D[] = [];
   private readonly raycaster = new THREE.Raycaster();
   private readonly keys = new Set<string>();
   private readonly pos = new THREE.Vector3(0, 0, 9.5);
   private yaw = 0; // 0 = looking toward -z
   private pitch = -0.08;
-  private walkTo: { point: THREE.Vector3; face: THREE.Vector3 } | null = null;
+  private walkTo: { point: THREE.Vector3; face: THREE.Vector3; pitch: number } | null = null;
   private stick = { x: 0, y: 0 };
   private near: Station | null = null;
   private low: boolean;
   private disposed = false;
+  /** Resolves when the shaders are compiled and the first frame is on its way. */
+  readonly ready: Promise<void>;
   private frame = 0;
   private last = performance.now();
   private prevMove = performance.now();
@@ -98,7 +100,9 @@ export class CasinoFloor3D {
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.05;
-    this.renderer.shadowMap.type = THREE.PCFShadowMap;
+    // No real-time shadows here: soft painted shadows under everything look the same from
+    // walking height, and keep the floor quick to open and smooth to walk around.
+    this.renderer.shadowMap.enabled = false;
     setMaxAnisotropy(Math.min(8, this.renderer.capabilities.getMaxAnisotropy()));
     container.append(this.renderer.domElement);
     this.scene.background = new THREE.Color(0x0b0706);
@@ -109,13 +113,21 @@ export class CasinoFloor3D {
     for (const s of STATIONS) if (s.game) this.buildStation(s);
     this.buildSlots();
     this.buildDecor();
+    // Everything that doesn't move becomes a few big meshes (far fewer draw calls).
+    mergeStatic(this.scene, [
+      ...this.dealers.flatMap((d) => [d.group, d.limbs]),
+      ...this.guests.map((g) => g.group),
+      ...this.wheels.flatMap((w) => [w.rotor, w.ball]),
+      ...this.pickables.map((p) => p.mesh),
+    ]);
 
     // Start at the entrance, or beside the table you just left.
     const back = opts.start ? STATIONS.find((s) => s.id === opts.start) : undefined;
     if (back) {
-      const front = this.approachPoint(back, 2.4);
+      const front = this.approachPoint(back, back.game ? 2.4 : 3.3);
       this.pos.copy(front);
       this.faceToward(back.pos);
+      if (!back.game) this.pitch = 0.04;
     }
 
     this.applyQuality();
@@ -123,7 +135,11 @@ export class CasinoFloor3D {
     this.observer.observe(container);
     this.resize();
     this.wireInput();
-    this.frame = requestAnimationFrame(this.loop);
+    this.ready = warmUp(this.renderer, this.scene, this.camera).then(() => {
+      if (this.disposed) return;
+      this.last = performance.now();
+      this.frame = requestAnimationFrame(this.loop);
+    });
   }
 
   // ---------- Building the room ----------
@@ -200,6 +216,9 @@ export class CasinoFloor3D {
         band.position.set(cx, y, cz);
         this.scene.add(band);
       }
+      const pool = blobShadow(1.4, 1.4, 0.6);
+      pool.position.set(cx, 0, cz);
+      this.scene.add(pool);
       this.colliders.push({ x: cx, z: cz, r: 0.55 });
     }
 
@@ -226,7 +245,8 @@ export class CasinoFloor3D {
     const g = new THREE.Group();
     g.position.set(x, ROOM.h - 0.9, z);
     const brass = new THREE.MeshStandardMaterial({ color: 0xd8b25e, metalness: 1, roughness: 0.25 });
-    const crystal = new THREE.MeshPhysicalMaterial({ color: 0xffffff, roughness: 0.02, transmission: 0.4, transparent: true, opacity: 0.8, clearcoat: 1, emissive: 0xffe9c4, emissiveIntensity: 0.25 });
+    const crystal = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.05, metalness: 0.6, emissive: 0xffe9c4, emissiveIntensity: 0.35 });
+    const bulbs: number[] = [];
     const rod = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, 0.9), brass);
     rod.position.y = 0.45;
     g.add(rod);
@@ -245,14 +265,13 @@ export class CasinoFloor3D {
         drop.scale.y = 1.8;
         drop.position.set(Math.cos(a) * r, y - 0.08, Math.sin(a) * r);
         g.add(drop);
-        if (i % 2 === 0) {
-          const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: glow, color: 0xffd9a0, transparent: true, opacity: 0.8, blending: THREE.AdditiveBlending, depthWrite: false }));
-          s.scale.setScalar(0.22);
-          s.position.set(Math.cos(a) * r, y + 0.04, Math.sin(a) * r);
-          g.add(s);
-        }
+        if (i % 2 === 0) bulbs.push(Math.cos(a) * r, y + 0.04, Math.sin(a) * r);
       }
     }
+    // The bulbs' glow: one point cloud per chandelier (a single draw call).
+    const bulbGeo = new THREE.BufferGeometry();
+    bulbGeo.setAttribute('position', new THREE.Float32BufferAttribute(bulbs, 3));
+    g.add(new THREE.Points(bulbGeo, new THREE.PointsMaterial({ map: glow, color: 0xffd9a0, size: 0.22, transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending, depthWrite: false })));
     const halo = new THREE.Sprite(new THREE.SpriteMaterial({ map: glow, color: 0xffcf8a, transparent: true, opacity: 0.35, blending: THREE.AdditiveBlending, depthWrite: false }));
     halo.scale.setScalar(2.4);
     halo.position.y = -0.15;
@@ -331,13 +350,10 @@ export class CasinoFloor3D {
     const lamp = new THREE.SpotLight(0xffdcae, 14, 7, 0.75, 0.6, 1.3);
     lamp.position.set(0, 3.2, 0);
     lamp.target.position.set(0, TABLE_Y, 0);
-    lamp.shadow.mapSize.set(1024, 1024);
-    lamp.shadow.bias = -0.0005;
-    lamp.shadow.normalBias = 0.02;
-    lamp.shadow.camera.near = 1;
-    lamp.shadow.camera.far = 5;
     g.add(lamp, lamp.target);
-    this.shadowLights.push(lamp);
+    // A soft shadow pooled under the table.
+    const pool = blobShadow(s.game === 'roulette' ? 3.4 : 3, s.game === 'roulette' ? 1.9 : 2.3, 0.75);
+    g.add(pool);
 
     // Invisible pick target: tap anywhere on the table to walk to it.
     const pick = new THREE.Mesh(new THREE.CylinderGeometry(s.radius, s.radius, 1.6, 20), new THREE.MeshBasicMaterial({ visible: false }));
@@ -388,7 +404,9 @@ export class CasinoFloor3D {
         const post = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.05, 0.66, 10), chrome);
         post.position.set(0, 0.33, 0.75);
         body.castShadow = true;
-        g.add(body, topper, screen, sign, deck, lever, knob, stool, post);
+        const pool = blobShadow(1.1, 1.3, 0.6);
+        pool.position.z = 0.2;
+        g.add(body, topper, screen, sign, deck, lever, knob, stool, post, pool);
         this.scene.add(g);
         this.blinkers.push({ mat: glowMat, phase: Math.random() * 10, speed: 1.5 + Math.random() * 2 });
         this.blinkers.push({ mat: screenMat, phase: Math.random() * 10, speed: 0.6 + Math.random() });
@@ -469,9 +487,6 @@ export class CasinoFloor3D {
     const glass = new THREE.Mesh(new THREE.PlaneGeometry(3, 1.2), new THREE.MeshBasicMaterial({ color: 0x3a2a12, transparent: true, opacity: 0.35 }));
     glass.position.set(0, 1.75, 0.21);
     cage.add(glass);
-    const lamp = new THREE.PointLight(0xffd6a0, 5, 5, 1.6);
-    lamp.position.set(0, 2.4, 1);
-    cage.add(lamp);
     const pick = new THREE.Mesh(new THREE.BoxGeometry(3.2, 2.4, 1.2), new THREE.MeshBasicMaterial({ visible: false }));
     pick.position.y = 1.2;
     cage.add(pick);
@@ -567,7 +582,7 @@ export class CasinoFloor3D {
   goTo(id: StationId): void {
     const s = STATIONS.find((x) => x.id === id);
     if (!s) return;
-    this.walkTo = { point: this.approachPoint(s, s.game === 'roulette' ? 2.3 : s.game ? 2.6 : 1.9), face: s.pos.clone().setY(0) };
+    this.walkTo = { point: this.approachPoint(s, s.game === 'roulette' ? 2.3 : s.game ? 2.6 : 3.3), face: s.pos.clone().setY(0), pitch: s.game ? -0.12 : 0.04 };
   }
 
   /** A spot in front of a table, on its players' side. */
@@ -616,7 +631,7 @@ export class CasinoFloor3D {
         let d = targetYaw - this.yaw;
         d = Math.atan2(Math.sin(d), Math.cos(d));
         this.yaw += d * Math.min(1, dt * 4);
-        this.pitch = damp(this.pitch, -0.12, 3, dt);
+        this.pitch = damp(this.pitch, this.walkTo.pitch, 3, dt);
         const step = Math.min(dist, SPEED * dt * Math.min(1, dist * 1.5 + 0.3));
         this.pos.addScaledVector(to.normalize(), step);
         fwd = side = 0;
@@ -722,20 +737,39 @@ export class CasinoFloor3D {
 
   private applyQuality(): void {
     const low = this.low;
-    this.renderer.setPixelRatio(low ? Math.min(window.devicePixelRatio, 1) : Math.min(window.devicePixelRatio, 1.75));
-    this.renderer.shadowMap.enabled = !low;
-    for (const l of this.shadowLights) l.castShadow = !low;
+    this.renderer.setPixelRatio(low ? Math.min(window.devicePixelRatio, 1) : Math.min(window.devicePixelRatio, 1.5));
+
     for (const o of this.extras) o.visible = !low;
-    this.scene.traverse((o) => {
-      const m = (o as THREE.Mesh).material;
-      if (Array.isArray(m)) m.forEach((x) => (x.needsUpdate = true));
-      else if (m) m.needsUpdate = true;
-    });
     this.resize();
   }
 }
 
 // ---------- Textures and signs ----------
+
+let blobTex: THREE.CanvasTexture | null = null;
+const blobMats = new Map<number, THREE.MeshBasicMaterial>();
+
+/** A soft dark pool on the carpet: a cheap stand-in for a real-time shadow. */
+function blobShadow(w: number, d: number, strength: number): THREE.Mesh {
+  blobTex ??= canvasTex(128, 128, (ctx) => {
+    const g = ctx.createRadialGradient(64, 64, 0, 64, 64, 64);
+    g.addColorStop(0, 'rgba(0,0,0,1)');
+    g.addColorStop(0.55, 'rgba(0,0,0,0.6)');
+    g.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, 128, 128);
+  });
+  let mat = blobMats.get(strength);
+  if (!mat) {
+    mat = new THREE.MeshBasicMaterial({ map: blobTex, transparent: true, opacity: strength, depthWrite: false, color: 0x000000 });
+    blobMats.set(strength, mat);
+  }
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(w, d), mat);
+  m.rotation.x = -Math.PI / 2;
+  m.position.y = 0.006;
+  m.renderOrder = 1;
+  return m;
+}
 
 function canvasTex(w: number, h: number, draw: (ctx: CanvasRenderingContext2D) => void, repeat = false): THREE.CanvasTexture {
   const c = document.createElement('canvas');

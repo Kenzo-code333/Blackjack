@@ -15,3 +15,16 @@ export function addEnvironmentLight(renderer: THREE.WebGLRenderer, scene: THREE.
     console.warn('No environment lighting', err);
   }
 }
+
+/**
+ * Compiles every shader the scene needs before the first frame. Where the browser can
+ * compile in the background (most desktop and phone browsers), the page stays responsive
+ * meanwhile instead of freezing on the first frame.
+ */
+export async function warmUp(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera: THREE.Camera): Promise<void> {
+  try {
+    await renderer.compileAsync(scene, camera);
+  } catch (err) {
+    console.warn('Shader warm-up skipped', err);
+  }
+}

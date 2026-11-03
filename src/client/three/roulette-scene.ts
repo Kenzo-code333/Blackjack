@@ -16,7 +16,8 @@ import type { TableRenderer } from '../renderer.js';
 import { Avatar } from './avatar.js';
 import { Dealer } from './dealer.js';
 import { Celebrations } from './effects.js';
-import { addEnvironmentLight } from './env-light.js';
+import { addEnvironmentLight, warmUp } from './env-light.js';
+import { mergeStatic } from './bake.js';
 import { buildRoom } from './environment.js';
 import { CHIP_H, TABLE_Y } from './layout.js';
 import { ChipStack, setChipDetail } from './pieces.js';
@@ -297,6 +298,9 @@ export function buildWheel(low: boolean): Wheel {
     rotor.add(arm, knob);
   }
 
+  // The wheel head turns as one piece: merge its parts (frets, cone, turret…) per material.
+  mergeStatic(rotor);
+
   // The ball: small, white and glossy.
   const ball = new THREE.Mesh(
     new THREE.SphereGeometry(BALL_R, 24, 18),
@@ -539,6 +543,8 @@ export class RouletteScene3D implements TableRenderer {
   private state: RouletteState | null = null;
   private low: boolean;
   private disposed = false;
+  /** Resolves when the shaders are compiled and the first frame is on its way. */
+  readonly ready: Promise<void>;
   private frame = 0;
   private last = performance.now();
   private clock = 0;
@@ -619,7 +625,7 @@ export class RouletteScene3D implements TableRenderer {
     this.dolly = new THREE.Group();
     const glass = new THREE.Mesh(
       new THREE.CylinderGeometry(0.018, 0.022, 0.05, 24),
-      new THREE.MeshPhysicalMaterial({ color: 0xffffff, transmission: 0.6, transparent: true, opacity: 0.75, roughness: 0.05, clearcoat: 1, thickness: 0.02 }),
+      new THREE.MeshPhysicalMaterial({ color: 0xf4f8ff, transparent: true, opacity: 0.55, roughness: 0.05, clearcoat: 1 }),
     );
     glass.position.y = 0.025;
     const cap = new THREE.Mesh(new THREE.SphereGeometry(0.016, 20, 12), new THREE.MeshStandardMaterial({ color: 0xd8b25e, metalness: 1, roughness: 0.2 }));
@@ -642,7 +648,11 @@ export class RouletteScene3D implements TableRenderer {
     this.observer.observe(container);
     this.resize();
     this.wireInput();
-    this.frame = requestAnimationFrame(this.loop);
+    this.ready = warmUp(this.renderer, this.scene, this.camera).then(() => {
+      if (this.disposed) return;
+      this.last = performance.now();
+      this.frame = requestAnimationFrame(this.loop);
+    });
   }
 
   // ---------- Input: tap the layout to bet; drag to look around ----------

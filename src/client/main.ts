@@ -173,6 +173,8 @@ function showProfile(): void {
   document.title = `${CASINO_NAME} · Blackjack & Poker`;
   const screen = profileScreen(() => go('/lobby'));
   mount(screen.el, screen.dispose);
+  // Download the 3D casino floor while you pick your look, so "Enter the casino" is quick.
+  setTimeout(() => void import('./three/casino-floor.js').catch(() => {}), 400);
 }
 
 /** The casino floor: walk around in 3D (or a simple list), then pick a table. */
@@ -449,6 +451,9 @@ function showTableFor(code: string, game: GameKind): void {
       }
       renderer = new Table2D(stage);
     }
+    // Keep "Setting up the table…" up until the 3D view can draw without stutter.
+    await renderer.ready;
+    if (disposed) return;
     loading.remove();
     if (!store.local.get('bj:hinted')) {
       store.local.set('bj:hinted', '1');

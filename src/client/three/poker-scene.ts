@@ -5,6 +5,7 @@
 // scene snaps to the exact state, so it can never show something the server didn't say.
 
 import * as THREE from 'three';
+import { addEnvironmentLight, warmUp } from './env-light.js';
 import type { AnyEvent, AnyState, PokerEvent, PokerState, TableEvent } from '../../shared/protocol.js';
 import type { Sound } from '../audio.js';
 import { money } from '../format.js';
@@ -93,6 +94,8 @@ export class PokerScene3D implements TableRenderer {
   private state: PokerState | null = null;
   private low: boolean;
   private disposed = false;
+  /** Resolves when the shaders are compiled and the first frame is on its way. */
+  readonly ready: Promise<void>;
   private frame = 0;
   private last = performance.now();
   private clock = 0;
@@ -125,6 +128,7 @@ export class PokerScene3D implements TableRenderer {
     this.renderer.shadowMap.type = THREE.PCFShadowMap;
     setMaxAnisotropy(Math.min(8, this.renderer.capabilities.getMaxAnisotropy()));
     container.append(this.renderer.domElement);
+    addEnvironmentLight(this.renderer, this.scene, 0.22);
     this.scene.background = new THREE.Color(0x080605);
     this.scene.fog = new THREE.FogExp2(0x080605, 0.08);
 
@@ -189,7 +193,11 @@ export class PokerScene3D implements TableRenderer {
     });
     for (const ev of ['pointerup', 'pointercancel', 'pointerleave']) el.addEventListener(ev, () => (this.drag = null));
     el.addEventListener('dblclick', () => (this.yawTarget = this.pitchTarget = 0));
-    this.frame = requestAnimationFrame(this.loop);
+    this.ready = warmUp(this.renderer, this.scene, this.camera).then(() => {
+      if (this.disposed) return;
+      this.last = performance.now();
+      this.frame = requestAnimationFrame(this.loop);
+    });
   }
 
   private buildTable(): THREE.Group {

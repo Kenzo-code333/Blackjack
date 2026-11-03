@@ -6,5 +6,7 @@ export interface TableRenderer {
   setLowGraphics(low: boolean): void;
   /** Shows a chat line at that player's seat, if the view can. */
   say?(playerId: string, text: string): void;
+  /** Resolves once the view can draw smoothly (shaders compiled). */
+  readonly ready?: Promise<void>;
   dispose(): void;
 }

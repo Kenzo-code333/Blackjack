@@ -7,6 +7,7 @@
 // the middle of a round just works).
 
 import * as THREE from 'three';
+import { addEnvironmentLight, warmUp } from './env-light.js';
 import type { AnyEvent, AnyState, PokerEvent, PublicPlayer, PublicState, TableEvent } from '../../shared/protocol.js';
 import type { Sound } from '../audio.js';
 import { OUTCOME_TEXT, money } from '../format.js';
@@ -98,6 +99,8 @@ export class Table3D implements TableRenderer {
   private frame = 0;
   private lastTime = performance.now();
   private disposed = false;
+  /** Resolves when the shaders are compiled and the first frame is on its way. */
+  readonly ready: Promise<void>;
   private low: boolean;
   private readonly reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
@@ -138,6 +141,7 @@ export class Table3D implements TableRenderer {
     this.renderer.shadowMap.type = THREE.PCFShadowMap;
     setMaxAnisotropy(Math.min(8, this.renderer.capabilities.getMaxAnisotropy()));
     container.append(this.renderer.domElement);
+    addEnvironmentLight(this.renderer, this.scene, 0.22);
 
     this.scene.background = new THREE.Color(0x080605);
     this.scene.fog = new THREE.FogExp2(0x080605, 0.085);
@@ -185,7 +189,11 @@ export class Table3D implements TableRenderer {
     el.addEventListener('dblclick', this.recenter);
     el.addEventListener('webglcontextlost', (e) => e.preventDefault());
 
-    this.frame = requestAnimationFrame(this.loop);
+    this.ready = warmUp(this.renderer, this.scene, this.camera).then(() => {
+      if (this.disposed) return;
+      this.lastTime = performance.now();
+      this.frame = requestAnimationFrame(this.loop);
+    });
   }
 
   // ---------- TableRenderer ----------
