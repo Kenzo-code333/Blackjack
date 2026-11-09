@@ -472,9 +472,11 @@ export function buildRouletteTable(): { group: THREE.Group; felt: THREE.Mesh } {
   tray.position.y = 0.015;
   float.add(tray);
   const colors = [0xb3262e, 0x1f5fa8, 0x2c8a4b, 0x111111, 0x6d3ba3, 0xd9a43a];
+  const chipGeo = new THREE.CylinderGeometry(0.02, 0.02, CHIP_H, 20);
+  const chipMats = colors.map((color) => new THREE.MeshStandardMaterial({ color, roughness: 0.4 }));
   for (let i = 0; i < 6; i++) {
     for (let k = 0; k < 14; k++) {
-      const chip = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, CHIP_H, 20), new THREE.MeshStandardMaterial({ color: colors[i], roughness: 0.4 }));
+      const chip = new THREE.Mesh(chipGeo, chipMats[i]!);
       chip.rotation.z = Math.PI / 2;
       chip.position.set(-0.14 + i * 0.055, 0.045, -0.04 + k * CHIP_H * 1.05 + 0.01);
       chip.rotation.y = Math.PI / 2;
@@ -482,6 +484,7 @@ export function buildRouletteTable(): { group: THREE.Group; felt: THREE.Mesh } {
     }
   }
   float.position.set(-0.45, TABLE_Y, -0.47);
+  mergeStatic(float);
   g.add(felt, body, rail, float);
   return { group: g, felt };
 }

@@ -10,7 +10,7 @@ import { LOOK_OPTIONS, type GameKind, type Look, randomLook } from '../../shared
 import { Avatar } from './avatar.js';
 import { Dealer } from './dealer.js';
 import { addEnvironmentLight, warmUp } from './env-light.js';
-import { mergeStatic } from './bake.js';
+import { mergeStatic, simplifyMaterials } from './bake.js';
 import { buildEnvironment } from './environment.js';
 import { TABLE_Y } from './layout.js';
 import { buildPokerTable } from './poker-scene.js';
@@ -86,6 +86,8 @@ export class CasinoFloor3D {
   private near: Station | null = null;
   private low: boolean;
   private disposed = false;
+  /** Where builders put things: the scene, or a holder that is prepared before it joins the scene. */
+  private target: THREE.Object3D = this.scene;
   private paused = false;
   /** Resolves when the shaders are compiled and the first frame is on its way. */
   readonly ready: Promise<void>;
@@ -116,17 +118,11 @@ export class CasinoFloor3D {
     this.scene.fog = new THREE.Fog(0x0b0706, 9, 26);
     addEnvironmentLight(this.renderer, this.scene, 0.25);
 
+    // First just the room (quick to prepare), so the doors open right away. The tables,
+    // machines and decorations arrive over the next moments, nearest first (see buildRest).
     this.buildRoom();
-    for (const s of STATIONS) if (s.game) this.buildStation(s);
-    this.buildSlots();
-    this.buildDecor();
-    // Everything that doesn't move becomes a few big meshes (far fewer draw calls).
-    mergeStatic(this.scene, [
-      ...this.dealers.flatMap((d) => [d.group, d.limbs]),
-      ...this.guests.map((g) => g.group),
-      ...this.wheels.flatMap((w) => [w.rotor, w.ball]),
-      ...this.pickables.map((p) => p.mesh),
-    ]);
+    simplifyMaterials(this.scene);
+    mergeStatic(this.scene);
 
     // Start at the entrance, or beside the table you just left.
     const back = opts.start ? STATIONS.find((s) => s.id === opts.start) : undefined;
@@ -146,7 +142,45 @@ export class CasinoFloor3D {
       if (this.disposed) return;
       this.last = performance.now();
       this.frame = requestAnimationFrame(this.loop);
+      void this.buildRest();
     });
+  }
+
+  /**
+   * Adds the tables, slot machines and decorations one at a time, nearest first. Each is
+   * prepared off-screen (simpler materials, merged into a few meshes, shaders compiled in
+   * the background) and only then joins the scene, so walking stays smooth.
+   */
+  private async buildRest(): Promise<void> {
+    const steps: { at: THREE.Vector3; build: () => void }[] = [
+      ...STATIONS.filter((st) => st.game).map((st) => ({ at: st.pos, build: () => this.buildStation(st) })),
+      { at: new THREE.Vector3(-ROOM.x, 0, -6), build: () => this.buildSlots() },
+      { at: new THREE.Vector3(0, 0, 8), build: () => this.buildDecor() },
+    ];
+    steps.sort((a, b) => a.at.distanceTo(this.pos) - b.at.distanceTo(this.pos));
+    for (const step of steps) {
+      if (this.disposed) return;
+      const holder = new THREE.Group();
+      this.target = holder;
+      const d0 = this.dealers.length;
+      const g0 = this.guests.length;
+      step.build();
+      this.target = this.scene;
+      // People on the floor hold their pose: they become part of the scenery (one mesh per
+      // material), which is much cheaper than animating dozens of body parts each.
+      const people = [...this.dealers.splice(d0), ...this.guests.splice(g0)];
+      for (let i = 0; i < 6; i++) for (const p of people) p.update(0.05);
+      simplifyMaterials(holder);
+      mergeStatic(holder, this.wheels.flatMap((w) => [w.rotor, w.ball]));
+      try {
+        await this.renderer.compileAsync(holder, this.camera, this.scene);
+      } catch {
+        /* drawn as it is */
+      }
+      if (this.disposed) return;
+      this.scene.add(holder);
+      await new Promise((r) => requestAnimationFrame(() => r(null)));
+    }
   }
 
   // ---------- Building the room ----------
@@ -237,7 +271,16 @@ export class CasinoFloor3D {
       [0, -1.5],
       [-6, 3.5],
       [6, 3.5],
-    ] as const) this.chandelier(lx, lz, glow);
+    ] as const) this.chandelier(lx, lz, glow, lz === 3.5 && lx !== 0 ? false : true);
+    // A lamp over every table, set up now: adding lights later would make every material
+    // be prepared again, which is what causes stutters.
+    for (const st of STATIONS) {
+      if (!st.game) continue;
+      const lamp = new THREE.SpotLight(0xffdcae, 14, 7, 0.75, 0.6, 1.3);
+      lamp.position.copy(st.pos).setY(3.2);
+      lamp.target.position.copy(st.pos).setY(TABLE_Y);
+      this.scene.add(lamp, lamp.target);
+    }
     // The entrance: a lit archway behind the start point.
     const arch = new THREE.Mesh(new THREE.PlaneGeometry(3, 3.2), new THREE.MeshBasicMaterial({ color: 0xffd9a0 }));
     arch.position.set(0, 1.6, Z - 0.02);
@@ -248,7 +291,7 @@ export class CasinoFloor3D {
     this.scene.add(sign);
   }
 
-  private chandelier(x: number, z: number, glow: THREE.Texture): void {
+  private chandelier(x: number, z: number, glow: THREE.Texture, withLight: boolean): void {
     const g = new THREE.Group();
     g.position.set(x, ROOM.h - 0.9, z);
     const brass = new THREE.MeshStandardMaterial({ color: 0xd8b25e, metalness: 1, roughness: 0.25 });
@@ -283,9 +326,11 @@ export class CasinoFloor3D {
     halo.scale.setScalar(2.4);
     halo.position.y = -0.15;
     g.add(halo);
-    const light = new THREE.PointLight(0xffd6a0, 9, 11, 1.6);
-    light.position.y = -0.3;
-    g.add(light);
+    if (withLight) {
+      const light = new THREE.PointLight(0xffd6a0, 11, 13, 1.6);
+      light.position.y = -0.3;
+      g.add(light);
+    }
     this.scene.add(g);
   }
 
@@ -349,15 +394,10 @@ export class CasinoFloor3D {
       const world = local.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), s.yaw).add(s.pos);
       const a = new Avatar(0, look, { position: world, rotationY: gyaw + s.yaw });
       a.tag.visible = false;
-      this.scene.add(a.group);
+      this.target.add(a.group);
       this.guests.push(a);
     }
 
-    // A lamp over the table.
-    const lamp = new THREE.SpotLight(0xffdcae, 14, 7, 0.75, 0.6, 1.3);
-    lamp.position.set(0, 3.2, 0);
-    lamp.target.position.set(0, TABLE_Y, 0);
-    g.add(lamp, lamp.target);
     // A soft shadow pooled under the table.
     const pool = blobShadow(s.game === 'roulette' ? 3.4 : 3, s.game === 'roulette' ? 1.9 : 2.3, 0.75);
     g.add(pool);
@@ -368,10 +408,10 @@ export class CasinoFloor3D {
     g.add(pick);
     this.pickables.push({ mesh: pick, station: s });
 
-    this.scene.add(g);
+    this.target.add(g);
     const sign = makeSign(s.title.toUpperCase(), s.sub, s.game === 'roulette' ? '#ff6b6b' : s.game === 'poker' ? '#7fb6ff' : '#7ee0a5', 1);
     sign.position.copy(s.pos).add(new THREE.Vector3(0, 2.65, 0));
-    this.scene.add(sign);
+    this.target.add(sign);
     this.signs.push({ sign, station: s });
     this.colliders.push({ x: s.pos.x, z: s.pos.z, r: s.radius });
   }
@@ -392,11 +432,11 @@ export class CasinoFloor3D {
         body.position.y = 0.725;
         const topper = new THREE.Mesh(new THREE.BoxGeometry(0.72, 0.36, 0.5), cabinet);
         topper.position.set(0, 1.65, -0.04);
-        const screenMat = new THREE.MeshBasicMaterial({ map: slotScreen(n++), toneMapped: false });
+        const screenMat = slotMaterial('screen', n++ % 6);
         const screen = new THREE.Mesh(new THREE.PlaneGeometry(0.56, 0.46), screenMat);
         screen.position.set(0, 1.08, 0.315);
         screen.rotation.x = -0.12;
-        const glowMat = new THREE.MeshBasicMaterial({ map: slotTopper(n), toneMapped: false });
+        const glowMat = slotMaterial('topper', n % 4);
         const sign = new THREE.Mesh(new THREE.PlaneGeometry(0.64, 0.3), glowMat);
         sign.position.set(0, 1.65, 0.215);
         const deck = new THREE.Mesh(new THREE.BoxGeometry(0.72, 0.06, 0.28), chrome);
@@ -414,16 +454,17 @@ export class CasinoFloor3D {
         const pool = blobShadow(1.1, 1.3, 0.6);
         pool.position.z = 0.2;
         g.add(body, topper, screen, sign, deck, lever, knob, stool, post, pool);
-        this.scene.add(g);
-        this.blinkers.push({ mat: glowMat, phase: Math.random() * 10, speed: 1.5 + Math.random() * 2 });
-        this.blinkers.push({ mat: screenMat, phase: Math.random() * 10, speed: 0.6 + Math.random() });
+        this.target.add(g);
+        for (const [m, speed] of [[glowMat, 1.5 + Math.random() * 2], [screenMat, 0.6 + Math.random()]] as const) {
+          if (!this.blinkers.some((bl) => bl.mat === m)) this.blinkers.push({ mat: m, phase: Math.random() * 10, speed });
+        }
       }
       this.colliders.push(...Array.from({ length: 12 }, (_, k) => ({ x: side * (ROOM.x - 0.6), z: -9.5 + k * 0.85, r: 0.9 })));
       // Tap any machine in the row to walk up to it.
       const station = STATIONS.find((st) => st.id === (side < 0 ? 'slots-left' : 'slots-right'))!;
       const pick = new THREE.Mesh(new THREE.BoxGeometry(1.2, 2, 7.2), new THREE.MeshBasicMaterial({ visible: false }));
       pick.position.set(station.pos.x, 1, station.pos.z);
-      this.scene.add(pick);
+      this.target.add(pick);
       this.pickables.push({ mesh: pick, station });
     }
   }
@@ -444,7 +485,7 @@ export class CasinoFloor3D {
         base.position.copy(p).setY(0.02);
         const top = new THREE.Mesh(new THREE.SphereGeometry(0.05, 14, 10), brass);
         top.position.copy(p).setY(0.97);
-        this.scene.add(post, base, top);
+        this.target.add(post, base, top);
         this.colliders.push({ x: p.x, z: p.z, r: 0.25 });
       }
       for (let i = 0; i < posts.length - 1; i++) {
@@ -452,7 +493,7 @@ export class CasinoFloor3D {
         const b = posts[i + 1]!.clone().setY(0.88);
         const mid = a.clone().lerp(b, 0.5).setY(0.66);
         const rope = new THREE.Mesh(new THREE.TubeGeometry(new THREE.QuadraticBezierCurve3(a, mid, b), 20, 0.022, 8), velvet);
-        this.scene.add(rope);
+        this.target.add(rope);
       }
     }
     // Palms in big pots.
@@ -468,13 +509,13 @@ export class CasinoFloor3D {
     ] as const) {
       const pot = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.26, 0.7, 20), potMat);
       pot.position.set(px, 0.35, pz);
-      this.scene.add(pot);
+      this.target.add(pot);
       for (let i = 0; i < 9; i++) {
         const leaf = new THREE.Mesh(new THREE.PlaneGeometry(0.28, 1.1), leafMat);
         const a = (i / 9) * Math.PI * 2;
         leaf.position.set(px + Math.cos(a) * 0.35, 1.3, pz + Math.sin(a) * 0.35);
         leaf.rotation.set(0.9, -a + Math.PI / 2, 0);
-        this.scene.add(leaf);
+        this.target.add(leaf);
       }
       this.colliders.push({ x: px, z: pz, r: 0.6 });
     }
@@ -495,7 +536,7 @@ export class CasinoFloor3D {
     // The cashier behind the counter, and a glowing window.
     const clerk = new Avatar(0, { skin: 3, hair: 2, hairColor: 0, outfit: 5, extra: 1 }, { position: new THREE.Vector3(7.5, 0.28, -ROOM.z + 0.05), rotationY: 0 });
     clerk.tag.visible = false;
-    this.scene.add(clerk.group);
+    this.target.add(clerk.group);
     this.guests.push(clerk);
     const glass = new THREE.Mesh(new THREE.PlaneGeometry(3, 1.2), new THREE.MeshBasicMaterial({ color: 0x3a2a12, transparent: true, opacity: 0.35 }));
     glass.position.set(0, 1.75, 0.21);
@@ -504,7 +545,7 @@ export class CasinoFloor3D {
     pick.position.y = 1.2;
     cage.add(pick);
     this.pickables.push({ mesh: pick, station: STATIONS.find((x) => x.id === 'cashier')! });
-    this.scene.add(cage);
+    this.target.add(cage);
     this.colliders.push({ x: 6.5, z: -ROOM.z + 0.6, r: 0.75 }, { x: 7.5, z: -ROOM.z + 0.6, r: 0.75 }, { x: 8.5, z: -ROOM.z + 0.6, r: 0.75 });
   }
 
@@ -954,6 +995,19 @@ function runnerTexture(): THREE.CanvasTexture {
   );
   t.repeat.set(1, 8);
   return t;
+}
+
+const slotMats = new Map<string, THREE.MeshBasicMaterial>();
+
+/** Slot screens and toppers come in a few designs, shared so each design is one draw call. */
+function slotMaterial(kind: 'screen' | 'topper', variant: number): THREE.MeshBasicMaterial {
+  const key = `${kind}${variant}`;
+  let m = slotMats.get(key);
+  if (!m) {
+    m = new THREE.MeshBasicMaterial({ map: kind === 'screen' ? slotScreen(variant) : slotTopper(variant), toneMapped: false });
+    slotMats.set(key, m);
+  }
+  return m;
 }
 
 const SLOT_SYMBOLS = ['7', '🍒', 'BAR', '🔔', '♦', '★'];

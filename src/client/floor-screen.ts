@@ -267,7 +267,7 @@ export function floorScreen(a: FloorScreenOptions): { el: HTMLElement; dispose()
       // The doors open once the room can draw smoothly.
       await floor.ready;
       document.body.dataset.floorReady = '1';
-      if (location.search.includes('debug')) (globalThis as { bjFloor?: unknown }).bjFloor = floor;
+      if (location.search.includes('debug') || store.local.get('bj:debug')) (globalThis as { bjFloor?: unknown }).bjFloor = floor;
       if (disposed) return;
       loading.classList.add('done');
       setTimeout(() => loading.remove(), 600);
