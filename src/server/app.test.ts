@@ -2,6 +2,7 @@ import type { AddressInfo } from 'node:net';
 import { type Socket, io as connect } from 'socket.io-client';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { ChatMessage, ClientToServer, JoinResult, PublicState, ServerToClient } from '../shared/protocol.js';
+import { AccountStore } from './accounts.js';
 import { type GameServer, createGameServer } from './app.js';
 import type { Table } from './table.js';
 
@@ -17,7 +18,7 @@ beforeEach(async () => {
     rejoinGraceMs: 300,
     emptyRoomTtlMs: 300,
     timing: { bettingMs: 5000, cardMs: 1, revealMs: 1, resultsMs: 200, turnMs: 5000, insuranceMs: 5000 },
-  });
+  }, new AccountStore(null));
   await new Promise<void>((r) => server.http.listen(0, r));
   url = `http://localhost:${(server.http.address() as AddressInfo).port}`;
 });
@@ -298,5 +299,25 @@ describe('socket server', () => {
     expect((await broke.next((x) => x.players.length === 1)).players[0]!.balance).toBe(60);
     expect((await call(broke, 'chips:reset')).ok).toBe(true);
     expect((await broke.next((x) => x.players[0]!.balance === 1000)).players[0]!.balance).toBe(1000);
+  });
+  it('accounts: sign up, sign in on another device, save and load progress', async () => {
+    const post = (path: string, body: unknown, token?: string, method = 'POST') =>
+      fetch(url + path, { method, headers: { 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}) }, body: JSON.stringify(body) }).then(
+        async (r) => ({ status: r.status, ...((await r.json()) as Record<string, any>) }) as Record<string, any>,
+      );
+    expect((await post('/api/signup', { email: 'not-an-email', password: 'secret1' })).ok).toBe(false);
+    expect((await post('/api/signup', { email: 'ana@example.com', password: '123' })).error).toMatch(/6 characters/);
+    const up = await post('/api/signup', { email: ' Ana@Example.com ', password: 'secret1', data: { 'bj:name': 'Ana', 'bj:chips': '1000' } });
+    expect(up).toMatchObject({ ok: true, email: 'ana@example.com' });
+    expect((await post('/api/signup', { email: 'ana@example.com', password: 'secret1' })).error).toMatch(/already/);
+    expect((await post('/api/login', { email: 'ana@example.com', password: 'wrong!!' })).error).toMatch(/Wrong/);
+    // Another device signs in and sees the same profile.
+    const other = await post('/api/login', { email: 'ANA@example.com', password: 'secret1' });
+    expect(other).toMatchObject({ ok: true, data: { 'bj:name': 'Ana' } });
+    expect((await post('/api/me', { data: { 'bj:name': 'Ana', 'bj:chips': '2400' } }, up.token as string, 'PUT')).ok).toBe(true);
+    const me = await fetch(url + '/api/me', { headers: { authorization: `Bearer ${other.token}` } }).then((r) => r.json());
+    expect(me.data['bj:chips']).toBe('2400');
+    expect((await fetch(url + '/api/me', { headers: { authorization: 'Bearer nope' } })).status).toBe(401);
+    expect((await post('/api/me', { data: { x: 'y'.repeat(30_000) } }, up.token as string, 'PUT')).ok).toBe(false);
   });
 });

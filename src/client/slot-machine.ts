@@ -9,6 +9,7 @@ import type { SoundName } from './audio.js';
 import { h, toast } from './dom.js';
 import { money } from './format.js';
 import { prefs } from './storage.js';
+import { recordPlay } from './stats.js';
 
 const NAMES: Record<SlotSymbol, [string, string]> = {
   cherry: ['Cherry', 'Cherries'],
@@ -408,6 +409,7 @@ export class SlotMachine {
     } else {
       this.message.textContent = prefs.chips < SLOT_BETS[0] ? 'Out of chips. The Cashier can help!' : 'So close… spin again!';
     }
+    recordPlay('slots', win - this.bet, result.multiplier >= 50);
     this.opts.onChips?.(prefs.chips);
     this.refresh();
   }

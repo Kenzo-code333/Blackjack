@@ -14,7 +14,9 @@ import type { PreviewApi } from './preview/install.js';
 import type { AnyState, GameKind } from '../shared/protocol.js';
 import type { TableRenderer } from './renderer.js';
 import { floorScreen } from './floor-screen.js';
-import { CASINO_NAME, type LobbyActions, type OpenTableInfo, joinScreen, lobbyScreen, profileScreen, rulesScreen } from './screens.js';
+import { account } from './account.js';
+import { CASINO_NAME, type LobbyActions, type OpenTableInfo, joinScreen, lobbyScreen, loginScreen, profileScreen, rulesScreen } from './screens.js';
+import { trackRound } from './stats.js';
 import { prefs, store } from './storage.js';
 import { Table2D } from './table2d.js';
 
@@ -137,6 +139,7 @@ function route(): void {
     leaveTable();
     const rules = currentPath.match(/^\/rules\/(blackjack|poker|roulette)$/)?.[1] as GameKind | undefined;
     if (rules) showRules(rules);
+    else if (currentPath === '/login' || (!account.email && !account.guest)) showLogin();
     else if (currentPath === '/lobby' && prefs.name) showLobby();
     else showProfile();
     return;
@@ -170,14 +173,50 @@ const GAME_TITLE: Record<GameKind, string> = { blackjack: 'Blackjack', poker: 'T
 
 /** The home page: your avatar and table nickname. */
 function showProfile(): void {
-  document.title = `${CASINO_NAME} · Blackjack & Poker`;
-  const screen = profileScreen(() => go('/lobby'));
+  document.title = `${CASINO_NAME} · Blackjack, Roulette & Poker`;
+  const screen = profileScreen(() => go('/lobby'), {
+    email: account.email,
+    where: account.where,
+    signIn: () => go('/login'),
+    signOut: () => void account.logOut().then(() => go('/login')),
+  });
   mount(screen.el, screen.dispose);
   // Download the 3D casino floor while you pick your look, so "Enter the casino" is quick.
   setTimeout(() => void import('./three/casino-floor.js').catch(() => {}), 400);
 }
 
 /** The casino floor: walk around in 3D (or a simple list), then pick a table. */
+/** Sign in or sign up with an email (or play as a guest). */
+function showLogin(): void {
+  document.title = `Sign in · ${CASINO_NAME}`;
+  const done = () => go('/');
+  mount(
+    loginScreen({
+      where: account.where,
+      signIn: async (email, password) => {
+        const res = await account.logIn(email, password);
+        if (res.ok) {
+          toast(`Welcome back${prefs.name ? `, ${prefs.name}` : ''}!`);
+          done();
+        }
+        return res;
+      },
+      signUp: async (email, password) => {
+        const res = await account.signUp(email, password);
+        if (res.ok) {
+          toast('Account created: your progress is saved');
+          done();
+        }
+        return res;
+      },
+      guest: () => {
+        account.playAsGuest();
+        done();
+      },
+    }),
+  );
+}
+
 function showLobby(): void {
   document.title = `${CASINO_NAME} · Casino floor`;
   const name = () => prefs.name || 'Player';
@@ -473,6 +512,7 @@ function showTableFor(code: string, game: GameKind): void {
     // Your chips go with you to the next table.
     const wallet = walletOf(state, net.me);
     if (wallet !== null) prefs.chips = wallet;
+    trackRound(state, net.me);
   };
   net.onChat = (m) => {
     hud.addChat(m);
@@ -502,4 +542,5 @@ function showTableFor(code: string, game: GameKind): void {
   };
 }
 
-route();
+// Sign back in (if you were) before showing anything.
+void account.init(!PREVIEW).finally(() => route());

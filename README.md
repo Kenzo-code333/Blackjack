@@ -5,7 +5,11 @@ pick a table nickname, then choose **Blackjack** (you against the dealer) or **T
 poker** (you against the other players). Play alone, with bots, or with friends who just
 open a link. No accounts, no installs, play money only.
 
-- **Your avatar and nickname** first, then a **3D casino floor** you walk around: go up to a
+- **Sign in or sign up with your email** (or play as a guest): your nickname, character,
+  chips, vault and stats are saved to your account. On the game server (Render) accounts
+  live on the server, so you can sign in from any device; in the downloaded file, the
+  website and the preview there is no server, so accounts are kept in that browser
+- **Your avatar and nickname**, then a **3D casino floor** you walk around: go up to a
   table to play, press the red **Leave** button to walk away (a simple list view is there too)
 - **Your chips go with you** from table to table (you start with 1,000). A free refill to
   1,000 is there only when you're down to 100 chips or less; **cash out** at the Cashier into your vault
@@ -170,6 +174,11 @@ In the Render dashboard: **New +** → **Blueprint** → select `kenzo-code333/b
 invite link (`https://blackjack-xxxx.onrender.com/table/ABC123`) to a friend.
 
 From now on, every push to `main` redeploys automatically.
+
+**Accounts on Render:** accounts are saved in `data/accounts.json` (or the path in the
+`ACCOUNTS_FILE` environment variable). Passwords are stored only as salted scrypt hashes.
+On Render's free plan the disk is wiped on every redeploy, so accounts would be lost: add a
+Render **Disk** (paid) mounted at e.g. `/var/data` and set `ACCOUNTS_FILE=/var/data/accounts.json`.
 
 **Good to know about the free plan:**
 - After 15 minutes with no visitors the server goes to sleep; the next visit takes ~30–60 s to

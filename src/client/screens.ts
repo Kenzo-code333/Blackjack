@@ -9,6 +9,7 @@ import type { SoundName } from './audio.js';
 import { h, toast } from './dom.js';
 import { RULES, rulesContent } from './rules.js';
 import { prefs } from './storage.js';
+import { readStats } from './stats.js';
 
 export const CASINO_NAME = 'The Velvet Ace';
 
@@ -91,7 +92,14 @@ export function avatarBadge(look: Look): HTMLElement {
 // ---------- Profile (the home page) ----------
 
 /** Your avatar and nickname. "Enter the casino" takes you to the lobby. */
-export function profileScreen(onEnter: () => void): { el: HTMLElement; dispose(): void } {
+export interface AccountBar {
+  email: string | null;
+  where: 'server' | 'device';
+  signIn: () => void;
+  signOut: () => void;
+}
+
+export function profileScreen(onEnter: () => void, acct?: AccountBar): { el: HTMLElement; dispose(): void } {
   let look = prefs.look;
   const preview = characterPreview(look, 'big');
   const name = nameField();
@@ -152,10 +160,20 @@ export function profileScreen(onEnter: () => void): { el: HTMLElement; dispose()
     e?.preventDefault();
     if (readName(name)) onEnter();
   };
+  const accountBar = acct
+    ? h(
+        'div',
+        { class: 'account-bar' },
+        acct.email
+          ? [h('span', {}, '🔒 Signed in as ', h('b', {}, acct.email)), h('button', { class: 'btn ghost small', type: 'button', onclick: acct.signOut }, 'Sign out')]
+          : [h('span', {}, '👤 Playing as a guest: your progress isn’t backed up'), h('button', { class: 'btn gold small', type: 'button', onclick: acct.signIn }, 'Sign in / Sign up')],
+      )
+    : null;
   const el = h(
     'main',
     { class: 'casino-screen' },
     marquee(),
+    accountBar,
     h(
       'form',
       { class: 'profile', onsubmit: enter },
@@ -170,8 +188,109 @@ export function profileScreen(onEnter: () => void): { el: HTMLElement; dispose()
         h('button', { class: 'btn gold big enter', type: 'submit' }, 'Enter the casino'),
       ),
     ),
+    statsPanel(),
   );
   return { el, dispose: () => preview.dispose() };
+}
+
+/** Your record so far: chips, and rounds played and won in each game. */
+function statsPanel(): HTMLElement {
+  const s = readStats();
+  const fmt = (n: number) => n.toLocaleString('en-US');
+  const signedFmt = (n: number) => (n > 0 ? `+${fmt(n)}` : n < 0 ? `−${fmt(-n)}` : '0');
+  const tile = (label: string, value: string, sub?: string) => h('div', { class: 'stat' }, h('span', { class: 'stat-label' }, label), h('b', {}, value), sub ? h('small', {}, sub) : null);
+  const game = (name: string, g: { played: number; won: number; net: number }, unit = 'rounds') =>
+    tile(name, g.played ? `${fmt(g.won)} / ${fmt(g.played)}` : '–', g.played ? `${unit} won · ${signedFmt(g.net)} chips` : `no ${unit} yet`);
+  return h(
+    'section',
+    { class: 'stats-panel', 'aria-label': 'Your stats' },
+    h('h2', {}, 'Your stats'),
+    h(
+      'div',
+      { class: 'stats-grid' },
+      tile('Chips', fmt(prefs.chips), prefs.vault ? `+ ${fmt(prefs.vault)} in the vault` : 'in your pocket'),
+      tile('Biggest win', s.biggestWin ? fmt(s.biggestWin) : '–', prefs.bestCashOut ? `best cash-out ${fmt(prefs.bestCashOut)}` : 'chips in one go'),
+      game('Blackjack', s.blackjack),
+      game('Roulette', s.roulette, 'spins'),
+      game('Poker', s.poker, 'hands'),
+      game('Slots', s.slots, 'spins'),
+    ),
+  );
+}
+
+// ---------- Sign in / sign up ----------
+
+/** Sign in or create an account with an email; or play as a guest. */
+export function loginScreen(o: {
+  where: 'server' | 'device';
+  signIn: (email: string, password: string) => Promise<{ ok: boolean; error?: string }>;
+  signUp: (email: string, password: string) => Promise<{ ok: boolean; error?: string }>;
+  guest: () => void;
+}): HTMLElement {
+  let mode: 'in' | 'up' = 'in';
+  const email = h('input', { class: 'field', id: 'email', type: 'email', autocomplete: 'email', placeholder: 'you@example.com', 'aria-label': 'Email', required: true });
+  const password = h('input', { class: 'field', id: 'password', type: 'password', autocomplete: 'current-password', placeholder: 'At least 6 characters', minlength: 6, 'aria-label': 'Password', required: true });
+  const show = h('button', { class: 'btn link small show-pw', type: 'button', onclick: () => {
+    password.type = password.type === 'password' ? 'text' : 'password';
+    show.textContent = password.type === 'password' ? 'Show' : 'Hide';
+  } }, 'Show');
+  const error = h('p', { class: 'login-error', role: 'alert', hidden: true });
+  const submit = h('button', { class: 'btn gold big', type: 'submit' }, 'Sign in');
+  const tabIn = h('button', { class: 'tab on', type: 'button', role: 'tab', onclick: () => setMode('in') }, 'Sign in');
+  const tabUp = h('button', { class: 'tab', type: 'button', role: 'tab', onclick: () => setMode('up') }, 'Create account');
+  const hint = h('p', { class: 'muted small' });
+  const setMode = (m: 'in' | 'up') => {
+    mode = m;
+    tabIn.classList.toggle('on', m === 'in');
+    tabUp.classList.toggle('on', m === 'up');
+    submit.textContent = m === 'in' ? 'Sign in' : 'Create my account';
+    password.autocomplete = m === 'in' ? 'current-password' : 'new-password';
+    hint.textContent =
+      m === 'up'
+        ? 'Your character, nickname, chips and stats so far are saved into your new account.'
+        : 'Welcome back! Your character, chips and stats load as you left them.';
+    error.hidden = true;
+  };
+  setMode('in');
+  let busy = false;
+  const form = h(
+    'form',
+    {
+      class: 'login-card',
+      onsubmit: async (e: Event) => {
+        e.preventDefault();
+        if (busy) return;
+        busy = true;
+        submit.disabled = true;
+        error.hidden = true;
+        const res = await (mode === 'in' ? o.signIn : o.signUp)(email.value, password.value);
+        busy = false;
+        submit.disabled = false;
+        if (!res.ok) {
+          error.textContent = res.error ?? 'Something went wrong';
+          error.hidden = false;
+        }
+      },
+    },
+    h('div', { class: 'tabs', role: 'tablist' }, tabIn, tabUp),
+    h('label', { class: 'field-label', for: 'email' }, 'Email'),
+    email,
+    h('label', { class: 'field-label', for: 'password' }, 'Password'),
+    h('div', { class: 'pw-row' }, password, show),
+    error,
+    submit,
+    hint,
+    h('div', { class: 'or' }, h('span', {}, 'or')),
+    h('button', { class: 'btn ghost', type: 'button', onclick: o.guest }, 'Play as a guest'),
+    h(
+      'p',
+      { class: 'muted small' },
+      o.where === 'server'
+        ? 'Your account is kept on this game’s server: sign in from any device to continue where you left off.'
+        : 'This version of the game has no server, so your account is saved in this browser on this device. Your password protects it.',
+    ),
+  );
+  return h('main', { class: 'casino-screen login-screen' }, marquee(), h('h1', { class: 'screen-title center' }, 'Welcome to the casino'), form, h('p', { class: 'fine-print' }, 'Play money only. No real money, ever.'));
 }
 
 // ---------- Lobby (the casino floor) ----------

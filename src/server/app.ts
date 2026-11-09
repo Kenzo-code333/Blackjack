@@ -8,6 +8,7 @@ import express from 'express';
 import { Server, type Socket } from 'socket.io';
 import type { Action } from '../game/index.js';
 import { type Ack, type ClientToServer, type JoinResult, type PokerAction, type ServerToClient, cleanChips, cleanLook } from '../shared/protocol.js';
+import { AccountStore } from './accounts.js';
 import { PokerTable } from './poker-table.js';
 import { RouletteTable } from './roulette-table.js';
 import { Table } from './table.js';
@@ -25,7 +26,7 @@ export interface GameServer {
   close(): Promise<void>;
 }
 
-export function createGameServer(settings: Partial<RoomSettings> = {}): GameServer {
+export function createGameServer(settings: Partial<RoomSettings> = {}, accounts = new AccountStore()): GameServer {
   const app = express();
   app.disable('x-powered-by');
   const http = createServer(app);
@@ -43,6 +44,43 @@ export function createGameServer(settings: Partial<RoomSettings> = {}): GameServ
     res.json({ ok: true, rooms: rooms.rooms.size });
   });
 
+  // ---------- Accounts: sign up / sign in with an email, save your progress ----------
+  const json = express.json({ limit: '32kb' });
+  const attempts = new Map<string, RateLimiter>();
+  const limited = (ip: string | undefined) => {
+    const key = ip ?? '?';
+    let r = attempts.get(key);
+    if (!r) {
+      if (attempts.size > 5000) attempts.clear();
+      r = new RateLimiter(10, 60_000); // 10 sign-in attempts a minute per address
+      attempts.set(key, r);
+    }
+    return !r.allow();
+  };
+  const bearer = (req: express.Request) => req.get('authorization')?.replace(/^Bearer\s+/i, '') ?? '';
+  app.post('/api/signup', json, async (req, res) => {
+    if (limited(req.ip)) return res.status(429).json({ ok: false, error: 'Too many tries. Wait a minute and try again.' });
+    res.json(await accounts.signUp(req.body?.email, req.body?.password, req.body?.data));
+  });
+  app.post('/api/login', json, async (req, res) => {
+    if (limited(req.ip)) return res.status(429).json({ ok: false, error: 'Too many tries. Wait a minute and try again.' });
+    res.json(await accounts.logIn(req.body?.email, req.body?.password));
+  });
+  app.get('/api/me', (req, res) => {
+    const a = accounts.byTokenOf(bearer(req));
+    if (!a) return res.status(401).json({ ok: false, error: 'Please sign in again' });
+    res.json({ ok: true, email: a.email, data: a.data });
+  });
+  app.put('/api/me', json, (req, res) => {
+    const error = accounts.save(bearer(req), req.body?.data);
+    if (error) return res.status(error.startsWith('Please') ? 401 : 400).json({ ok: false, error });
+    res.json({ ok: true });
+  });
+  app.post('/api/logout', (req, res) => {
+    accounts.logOut(bearer(req));
+    res.json({ ok: true });
+  });
+
   // Serve the built frontend (created by `npm run build`) from dist/client.
   const here = path.dirname(fileURLToPath(import.meta.url));
   const clientDir = [path.resolve(here, '../../dist/client'), path.resolve(here, '../client')].find((d) =>
@@ -51,7 +89,7 @@ export function createGameServer(settings: Partial<RoomSettings> = {}): GameServ
   if (clientDir) {
     app.use(express.static(clientDir, { index: false, maxAge: '1h' }));
     // Every page URL (/, /table/ABC123, …) gets the single-page app.
-    app.get(/^\/(?!socket\.io).*/, (_req, res) => {
+    app.get(/^\/(?!socket\.io|api\/).*/, (_req, res) => {
       res.sendFile(path.join(clientDir, 'index.html'));
     });
   }
@@ -251,6 +289,7 @@ export function createGameServer(settings: Partial<RoomSettings> = {}): GameServ
     close: () =>
       new Promise((resolve) => {
         rooms.closeAll();
+        accounts.flush();
         void io.close(() => resolve());
       }),
   };
