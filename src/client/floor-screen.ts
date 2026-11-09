@@ -20,10 +20,22 @@ export interface FloorScreenOptions extends LobbyActions {
 
 const LAST_STATION = 'bj:station';
 
-/** Remember which table you walked up to, so leaving it puts you back there. */
+/**
+ * Remember which table you walked up to, so leaving it puts you back beside it. Any other
+ * way onto the floor (opening or resuming the game, signing in, "Enter the casino") starts
+ * at the top of the red-carpet aisle.
+ */
 export const lastStation = {
   get: () => store.session.get(LAST_STATION) as StationId | null,
   set: (id: StationId) => store.session.set(LAST_STATION, id),
+  /** Call when leaving a table: the next floor visit starts beside it. */
+  returning: () => store.session.set('bj:back', '1'),
+  /** Where to start this visit (and forget the "returning" note). */
+  takeStart: (): StationId | null => {
+    const back = store.session.get('bj:back') === '1';
+    store.session.remove('bj:back');
+    return back ? (store.session.get(LAST_STATION) as StationId | null) : null;
+  },
 };
 
 export function floorScreen(a: FloorScreenOptions): { el: HTMLElement; dispose(): void } {
@@ -249,7 +261,7 @@ export function floorScreen(a: FloorScreenOptions): { el: HTMLElement; dispose()
       if (!webglAvailable()) throw new Error('no WebGL');
       floor = new CasinoFloor3D(stage, {
         low: a.low,
-        start: lastStation.get(),
+        start: lastStation.takeStart(),
         onNear: (s) => {
           card.hidden = !s;
           hint.hidden = Boolean(s);

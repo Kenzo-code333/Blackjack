@@ -94,7 +94,7 @@ export function avatarBadge(look: Look): HTMLElement {
 /** Your avatar and nickname. "Enter the casino" takes you to the lobby. */
 export interface AccountBar {
   email: string | null;
-  where: 'server' | 'device';
+  where: 'server' | 'cloud' | 'device';
   signIn: () => void;
   signOut: () => void;
 }
@@ -222,7 +222,7 @@ function statsPanel(): HTMLElement {
 
 /** Sign in or create an account with an email; or play as a guest. */
 export function loginScreen(o: {
-  where: 'server' | 'device';
+  where: 'server' | 'cloud' | 'device';
   signIn: (email: string, password: string) => Promise<{ ok: boolean; error?: string }>;
   signUp: (email: string, password: string) => Promise<{ ok: boolean; error?: string }>;
   guest: () => void;
@@ -287,7 +287,9 @@ export function loginScreen(o: {
       { class: 'muted small' },
       o.where === 'server'
         ? 'Your account is kept on this game’s server: sign in from any device to continue where you left off.'
-        : 'This version of the game has no server, so your account is saved in this browser on this device. Your password protects it.',
+        : o.where === 'cloud'
+          ? 'Your account is saved online, encrypted so only your password can open it: sign in on any device with the game file or website to continue where you left off. Keep a note of your email and password: they can’t be reset.'
+          : 'This version of the game saves your account in this browser on this device. Your password protects it.',
     ),
   );
   return h('main', { class: 'casino-screen login-screen' }, marquee(), h('h1', { class: 'screen-title center' }, 'Welcome to the casino'), form, h('p', { class: 'fine-print' }, 'Play money only. No real money, ever.'));

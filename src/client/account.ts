@@ -45,8 +45,10 @@ function check(email: string, password: string): string | null {
   return null;
 }
 
+export type Where = 'server' | 'cloud' | 'device';
+
 interface Backend {
-  readonly where: 'server' | 'device';
+  readonly where: Where;
   signUp(email: string, password: string, data: Profile): Promise<Res<{ token: string; data: Profile }>>;
   logIn(email: string, password: string): Promise<Res<{ token: string; data: Profile }>>;
   load(email: string, token: string): Promise<Profile | null>;
@@ -161,6 +163,114 @@ const deviceBackend: Backend = {
   logOut() {},
 };
 
+// ---------- Online saves without a server (file and website builds) ----------
+//
+// Your email and password together make two secrets (PBKDF2, 150,000 rounds): the name of
+// your save on the public relays, and the AES-256 key that encrypts it. Nobody without
+// your password can find your save, read it or overwrite it. Each save is written to every
+// relay that answers and kept in this browser too; the newest copy wins when you sign in.
+
+export interface CloudApi {
+  get(id: string): Promise<string[]>;
+  put(id: string, payload: string): Promise<number>;
+}
+
+const fromHex = (hex: string) => Uint8Array.from(hex.match(/../g)!.map((h) => parseInt(h, 16)));
+const toB64 = (b: Uint8Array) => btoa(String.fromCharCode(...b));
+const fromB64 = (s: string) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
+
+async function cloudSecrets(email: string, password: string): Promise<{ id: string; key: string }> {
+  const enc = new TextEncoder();
+  const base = await crypto.subtle.importKey('raw', enc.encode(password), 'PBKDF2', false, ['deriveBits']);
+  const bits = new Uint8Array(await crypto.subtle.deriveBits({ name: 'PBKDF2', salt: enc.encode(`velvet-ace-cloud-v1:${email}`), iterations: 150_000, hash: 'SHA-256' }, base, 512));
+  return { id: toHex(bits.slice(0, 20)), key: toHex(bits.slice(32)) };
+}
+
+async function aesKey(hex: string): Promise<CryptoKey> {
+  return crypto.subtle.importKey('raw', fromHex(hex), 'AES-GCM', false, ['encrypt', 'decrypt']);
+}
+
+async function seal(keyHex: string, save: { savedAt: number; data: Profile }): Promise<string> {
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const ct = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, await aesKey(keyHex), new TextEncoder().encode(JSON.stringify(save))));
+  const out = new Uint8Array(iv.length + ct.length);
+  out.set(iv);
+  out.set(ct, iv.length);
+  return `v1:${toB64(out)}`;
+}
+
+async function open(keyHex: string, payload: string): Promise<{ savedAt: number; data: Profile } | null> {
+  try {
+    if (!payload.startsWith('v1:')) return null;
+    const raw = fromB64(payload.slice(3));
+    const plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: raw.slice(0, 12) }, await aesKey(keyHex), raw.slice(12));
+    const save = JSON.parse(new TextDecoder().decode(plain)) as { savedAt: number; data: Profile };
+    return typeof save.savedAt === 'number' && save.data && typeof save.data === 'object' ? save : null;
+  } catch {
+    return null; // wrong key (wrong password), or not ours
+  }
+}
+
+/** The newest save that opens with this key, from the relays and this browser. */
+async function newest(cloud: CloudApi, id: string, key: string): Promise<{ savedAt: number; data: Profile } | null> {
+  const remote = await cloud.get(id).catch(() => [] as string[]);
+  const local = store.local.get(`bj:cloud:${id}`);
+  let best: { savedAt: number; data: Profile } | null = null;
+  for (const p of [...remote, ...(local ? [local] : [])]) {
+    const s = await open(key, p);
+    if (s && (!best || s.savedAt > best.savedAt)) best = s;
+  }
+  return best;
+}
+
+function cloudBackend(cloud: CloudApi): Backend {
+  const parse = (token: string) => JSON.parse(token) as { id: string; key: string };
+  return {
+    where: 'cloud',
+    async signUp(email, password, data) {
+      const { id, key } = await cloudSecrets(email, password);
+      if (await newest(cloud, id, key)) return { ok: false, error: 'You already have an account with this email and password. Sign in instead.' };
+      const payload = await seal(key, { savedAt: Date.now(), data });
+      const stored = await cloud.put(id, payload);
+      if (!stored) return { ok: false, error: 'Couldn’t reach the online save service. Check your internet connection and try again.' };
+      store.local.set(`bj:cloud:${id}`, payload);
+      return { ok: true, token: JSON.stringify({ id, key }), data };
+    },
+    async logIn(email, password) {
+      const { id, key } = await cloudSecrets(email, password);
+      const save = await newest(cloud, id, key);
+      if (!save) return { ok: false, error: 'Wrong email or password. New here? Choose “Create account”.' };
+      return { ok: true, token: JSON.stringify({ id, key }), data: save.data };
+    },
+    async load(_email, token) {
+      try {
+        const { id, key } = parse(token);
+        return (await newest(cloud, id, key))?.data ?? null;
+      } catch {
+        return null;
+      }
+    },
+    async save(_email, token, data) {
+      try {
+        const { id, key } = parse(token);
+        const payload = await seal(key, { savedAt: Date.now(), data });
+        store.local.set(`bj:cloud:${id}`, payload);
+        await cloud.put(id, payload);
+      } catch {
+        /* saved next time */
+      }
+    },
+    logOut(token) {
+      try {
+        // Leave nothing of this account behind on a shared computer.
+        store.local.remove(`bj:cloud:${parse(token).id}`);
+      } catch {
+        /* ignore */
+      }
+    },
+  };
+}
+
 // ---------- The signed-in player ----------
 
 let backend: Backend = deviceBackend;
@@ -170,7 +280,7 @@ let timer: ReturnType<typeof setInterval> | undefined;
 
 export const account = {
   /** Where accounts are kept in this version of the game. */
-  get where(): 'server' | 'device' {
+  get where(): Where {
     return backend.where;
   },
   get email(): string | null {
@@ -184,15 +294,18 @@ export const account = {
     store.local.set(GUEST_KEY, '1');
   },
 
-  /** Picks where accounts live and signs back in from the saved session. */
-  async init(useServer: boolean): Promise<void> {
-    backend = useServer ? serverBackend : deviceBackend;
+  /**
+   * Picks where accounts live (the game server; online saves through the relays; or this
+   * browser) and signs back in from the saved session.
+   */
+  async init(o: { server: boolean; cloud?: CloudApi | null }): Promise<void> {
+    backend = o.server ? serverBackend : o.cloud && globalThis.crypto?.subtle ? cloudBackend(o.cloud) : deviceBackend;
     try {
       const saved = JSON.parse(store.local.get(SESSION_KEY) ?? 'null') as { email: string; token: string; where: string } | null;
       if (saved?.email && saved.where === backend.where) {
         session = { email: saved.email, token: saved.token };
         const data = await backend.load(saved.email, saved.token);
-        if (data === null && backend.where === 'server') {
+        if (data === null && backend.where !== 'device') {
           // The server forgot the session (or can't be reached): keep playing with what's here.
           if (!navigator.onLine) startSync();
           else session = null;
@@ -260,7 +373,8 @@ async function saveNow(leaving = false): Promise<void> {
 function startSync(): void {
   lastSaved = JSON.stringify(snapshot());
   clearInterval(timer);
-  timer = setInterval(() => void saveNow(), 3000);
+  // Online saves go to several relays, so they're spaced out a little more.
+  timer = setInterval(() => void saveNow(), backend.where === 'cloud' ? 8000 : 3000);
   window.addEventListener('pagehide', () => void saveNow(true));
   document.addEventListener('visibilitychange', () => document.hidden && void saveNow(true));
 }

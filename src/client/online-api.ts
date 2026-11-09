@@ -14,6 +14,8 @@ export interface OnlineApi {
   onlineAvailable(): Promise<boolean>;
   /** Whether this build can list open tables (the claude.ai room can; the relay can't). */
   readonly listsTables: boolean;
+  /** Where accounts can be saved online (file and website builds), if anywhere. */
+  readonly cloud?: { get(id: string): Promise<string[]>; put(id: string, payload: string): Promise<number> };
   watchTables(fn: (tables: OpenTable[]) => void): Promise<() => void>;
   /** Open the table just created on this page to friends. */
   host(code: string, hostName: string): Promise<void>;

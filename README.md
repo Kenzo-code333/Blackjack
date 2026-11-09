@@ -6,9 +6,12 @@ poker** (you against the other players). Play alone, with bots, or with friends 
 open a link. No accounts, no installs, play money only.
 
 - **Sign in or sign up with your email** (or play as a guest): your nickname, character,
-  chips, vault and stats are saved to your account. On the game server (Render) accounts
-  live on the server, so you can sign in from any device; in the downloaded file, the
-  website and the preview there is no server, so accounts are kept in that browser
+  chips, vault and stats are saved to your account, and you can sign in from any device.
+  On the game server (Render) accounts live on the server. The downloaded file and the
+  website save accounts online through the public relays, encrypted with a key made from
+  your email and password (AES-256-GCM, PBKDF2): only someone with both can find, read or
+  overwrite the save. The claude.ai preview can't reach outside services, so there accounts
+  stay in that browser
 - **Your avatar and nickname**, then a **3D casino floor** you walk around: go up to a
   table to play, press the red **Leave** button to walk away (a simple list view is there too)
 - **Your chips go with you** from table to table (you start with 1,000). A free refill to

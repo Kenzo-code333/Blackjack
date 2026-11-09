@@ -388,3 +388,56 @@ export class RelayHost {
     this.mqtt?.close();
   }
 }
+
+// ---------- Cloud saves (accounts for the file and website builds) ----------
+//
+// An account's save is one retained message on each public broker, under a topic that
+// only someone with the right email AND password can work out, holding data encrypted
+// with a key from that same password. Brokers only ever see scrambled bytes.
+
+const saveTopic = (id: string) => `${NS}/acct/${id}`;
+
+/** Reads the saves kept under `id` on every broker that answers (one per broker). */
+export async function cloudGet(id: string, timeoutMs = 4500): Promise<string[]> {
+  const found = await Promise.all(
+    BROKERS.map(async (_, i) => {
+      let mqtt: Mqtt;
+      try {
+        ({ mqtt } = await Mqtt.connect(undefined, i));
+      } catch {
+        return null;
+      }
+      const payload = await new Promise<string | null>((resolve) => {
+        // A retained message arrives right after subscribing; nothing means no save there.
+        const timer = setTimeout(() => resolve(null), Math.min(timeoutMs, 2500));
+        mqtt.subscribe(saveTopic(id), (p) => {
+          if (!p) return;
+          clearTimeout(timer);
+          resolve(p);
+        });
+      });
+      mqtt.close();
+      return payload;
+    }),
+  );
+  return found.filter((p): p is string => Boolean(p));
+}
+
+/** Writes a save under `id` on every broker it can reach. Returns how many took it. */
+export async function cloudPut(id: string, payload: string): Promise<number> {
+  const results = await Promise.all(
+    BROKERS.map(async (_, i) => {
+      try {
+        const { mqtt } = await Mqtt.connect(undefined, i);
+        mqtt.publish(saveTopic(id), payload, true);
+        // Give the message a moment to leave before saying goodbye.
+        await new Promise((r) => setTimeout(r, 150));
+        mqtt.close();
+        return 1;
+      } catch {
+        return 0;
+      }
+    }),
+  );
+  return results.reduce((a: number, b) => a + b, 0);
+}

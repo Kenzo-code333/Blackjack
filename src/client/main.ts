@@ -13,7 +13,7 @@ import { Net, forgetSession, savedSession } from './net.js';
 import type { PreviewApi } from './preview/install.js';
 import type { AnyState, GameKind } from '../shared/protocol.js';
 import type { TableRenderer } from './renderer.js';
-import { floorScreen } from './floor-screen.js';
+import { floorScreen, lastStation } from './floor-screen.js';
 import { account } from './account.js';
 import { CASINO_NAME, type LobbyActions, type OpenTableInfo, joinScreen, lobbyScreen, loginScreen, profileScreen, rulesScreen } from './screens.js';
 import { trackRound } from './stats.js';
@@ -418,7 +418,10 @@ function showTableFor(code: string, game: GameKind): void {
         sound.setSfxVolume(v);
       },
     },
-    onLeave: () => go('/lobby'),
+    onLeave: () => {
+      lastStation.returning();
+      go('/lobby');
+    },
     onToggleGraphics: () => {
       low = !low;
       prefs.lowGraphics = low;
@@ -543,4 +546,4 @@ function showTableFor(code: string, game: GameKind): void {
 }
 
 // Sign back in (if you were) before showing anything.
-void account.init(!PREVIEW).finally(() => route());
+void account.init({ server: !PREVIEW, cloud: preview?.cloud ?? null }).finally(() => route());
