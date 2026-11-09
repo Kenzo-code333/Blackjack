@@ -18,12 +18,15 @@ import { buildRouletteTable, buildWheel } from './roulette-scene.js';
 import { carpetTexture, glowTexture, setMaxAnisotropy, woodTexture } from './textures.js';
 import { Animator, damp } from './tween.js';
 
-export type StationId = 'blackjack-solo' | 'blackjack' | 'poker' | 'roulette' | 'cashier';
+export type StationId = 'blackjack-solo' | 'blackjack' | 'poker' | 'roulette' | 'cashier' | 'slots-left' | 'slots-right';
 
 export interface Station {
   id: StationId;
-  /** null = the cashier's cage, not a game. */
+  /** null = not a table game: the cashier's cage or a row of slot machines (see `kind`). */
   game: GameKind | null;
+  kind?: 'cashier' | 'slots';
+  /** For a row of machines: half its length, along the row. */
+  span?: number;
   title: string;
   sub: string;
   /** Table center on the floor. */
@@ -34,14 +37,17 @@ export interface Station {
   radius: number;
 }
 
-const ROOM = { x: 12, z: 12, h: 4.6 };
+const ROOM_X = 12;
+const ROOM = { x: ROOM_X, z: 12, h: 4.6 };
 
 export const STATIONS: Station[] = [
   { id: 'blackjack-solo', game: 'blackjack', title: 'Blackjack', sub: 'Solo table · you vs the dealer', pos: new THREE.Vector3(-5.2, 0, -0.5), yaw: 0.5, radius: 1.75 },
   { id: 'blackjack', game: 'blackjack', title: 'Blackjack', sub: 'Join the players · bring friends', pos: new THREE.Vector3(-5.6, 0, -6.6), yaw: 0.35, radius: 1.75 },
   { id: 'roulette', game: 'roulette', title: 'Roulette', sub: 'Red, black or green?', pos: new THREE.Vector3(0, 0, -6.2), yaw: 0, radius: 1.9 },
   { id: 'poker', game: 'poker', title: 'Texas Hold’em', sub: 'No limit · blinds 5/10', pos: new THREE.Vector3(5.4, 0, -1.2), yaw: -0.55, radius: 1.75 },
-  { id: 'cashier', game: null, title: 'Cashier', sub: 'Cash out your chips', pos: new THREE.Vector3(7.5, 0, -11.4), yaw: 0, radius: 1.3 },
+  { id: 'cashier', game: null, kind: 'cashier', title: 'Cashier', sub: 'Cash out your chips', pos: new THREE.Vector3(7.5, 0, -11.4), yaw: 0, radius: 1.3 },
+  { id: 'slots-left', game: null, kind: 'slots', title: 'Slot machines', sub: 'Line up three of a kind', pos: new THREE.Vector3(-ROOM_X + 0.55, 0, -5.85), yaw: Math.PI / 2, radius: 0.8, span: 3.3 },
+  { id: 'slots-right', game: null, kind: 'slots', title: 'Slot machines', sub: 'Line up three of a kind', pos: new THREE.Vector3(ROOM_X - 0.55, 0, -5.45), yaw: -Math.PI / 2, radius: 0.8, span: 3.3 },
 ];
 
 export interface FloorOptions {
@@ -80,6 +86,7 @@ export class CasinoFloor3D {
   private near: Station | null = null;
   private low: boolean;
   private disposed = false;
+  private paused = false;
   /** Resolves when the shaders are compiled and the first frame is on its way. */
   readonly ready: Promise<void>;
   private frame = 0;
@@ -124,7 +131,7 @@ export class CasinoFloor3D {
     // Start at the entrance, or beside the table you just left.
     const back = opts.start ? STATIONS.find((s) => s.id === opts.start) : undefined;
     if (back) {
-      const front = this.approachPoint(back, back.game ? 2.4 : 3.3);
+      const front = this.approachPoint(back, back.kind === 'slots' ? 2.7 : back.game ? 2.4 : 3.3);
       this.pos.copy(front);
       this.faceToward(back.pos);
       if (!back.game) this.pitch = 0.04;
@@ -376,7 +383,7 @@ export class CasinoFloor3D {
     const seatMat = new THREE.MeshPhysicalMaterial({ color: 0x7a1020, roughness: 0.5, clearcoat: 0.4 });
     let n = 0;
     for (const side of [-1, 1]) {
-      for (let i = 0; i < (this.low ? 4 : 7); i++) {
+      for (let i = 0; i < 7; i++) {
         const g = new THREE.Group();
         const z = -9 + i * 1.05 + (side > 0 ? 0.4 : 0);
         g.position.set(side * (ROOM.x - 0.55), 0, z);
@@ -412,6 +419,12 @@ export class CasinoFloor3D {
         this.blinkers.push({ mat: screenMat, phase: Math.random() * 10, speed: 0.6 + Math.random() });
       }
       this.colliders.push(...Array.from({ length: 12 }, (_, k) => ({ x: side * (ROOM.x - 0.6), z: -9.5 + k * 0.85, r: 0.9 })));
+      // Tap any machine in the row to walk up to it.
+      const station = STATIONS.find((st) => st.id === (side < 0 ? 'slots-left' : 'slots-right'))!;
+      const pick = new THREE.Mesh(new THREE.BoxGeometry(1.2, 2, 7.2), new THREE.MeshBasicMaterial({ visible: false }));
+      pick.position.set(station.pos.x, 1, station.pos.z);
+      this.scene.add(pick);
+      this.pickables.push({ mesh: pick, station });
     }
   }
 
@@ -557,7 +570,7 @@ export class CasinoFloor3D {
   onStick?: (active: boolean, x: number, y: number, dx: number, dy: number) => void;
 
   private onKeyDown = (e: KeyboardEvent) => {
-    if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+    if (this.paused || e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
     const k = e.key.toLowerCase();
     if (['w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright', 'q', 'e'].includes(k)) {
       this.keys.add(k);
@@ -582,7 +595,33 @@ export class CasinoFloor3D {
   goTo(id: StationId): void {
     const s = STATIONS.find((x) => x.id === id);
     if (!s) return;
-    this.walkTo = { point: this.approachPoint(s, s.game === 'roulette' ? 2.3 : s.game ? 2.6 : 3.3), face: s.pos.clone().setY(0), pitch: s.game ? -0.12 : 0.04 };
+    const dist = s.kind === 'slots' ? 2.7 : s.game === 'roulette' ? 2.3 : s.game ? 2.6 : 3.3;
+    // At a row of machines, walk to the nearest machine rather than the middle of the row.
+    const point = this.approachPoint(s, dist);
+    if (s.span) {
+      const along = THREE.MathUtils.clamp((this.pos.x - s.pos.x) * Math.cos(s.yaw) - (this.pos.z - s.pos.z) * Math.sin(s.yaw), -s.span + 0.4, s.span - 0.4);
+      point.x += along * Math.cos(s.yaw);
+      point.z -= along * Math.sin(s.yaw);
+    }
+    const face = point.clone().addScaledVector(new THREE.Vector3(Math.sin(s.yaw), 0, Math.cos(s.yaw)), -dist);
+    this.walkTo = { point, face, pitch: s.kind === 'slots' ? -0.06 : s.game ? -0.12 : 0.04 };
+  }
+
+  /** Distance from you to a table's center, or to the nearest point of a row of machines. */
+  private distanceTo(s: Station): number {
+    const dx = this.pos.x - s.pos.x;
+    const dz = this.pos.z - s.pos.z;
+    if (!s.span) return Math.hypot(dx, dz);
+    const along = THREE.MathUtils.clamp(dx * Math.cos(s.yaw) - dz * Math.sin(s.yaw), -s.span, s.span);
+    return Math.hypot(dx - along * Math.cos(s.yaw), dz + along * Math.sin(s.yaw));
+  }
+
+  /** Stops walking and drawing while something covers the floor (the slot machine). */
+  setPaused(paused: boolean): void {
+    this.paused = paused;
+    this.keys.clear();
+    this.stick = { x: 0, y: 0 };
+    this.walkTo = null;
   }
 
   /** A spot in front of a table, on its players' side. */
@@ -667,6 +706,10 @@ export class CasinoFloor3D {
   private loop = (now: number) => {
     if (this.disposed) return;
     this.frame = requestAnimationFrame(this.loop);
+    if (this.paused) {
+      this.last = this.prevMove = now;
+      return;
+    }
     const dt = Math.min(0.1, (now - this.last) / 1000);
     this.last = now;
     this.clock += dt;
@@ -690,7 +733,7 @@ export class CasinoFloor3D {
     let near: Station | null = null;
     let best = Infinity;
     for (const s of STATIONS) {
-      const d = Math.hypot(this.pos.x - s.pos.x, this.pos.z - s.pos.z) - s.radius;
+      const d = this.distanceTo(s) - s.radius;
       if (d < NEAR - s.radius * 0.4 && d < best) {
         best = d;
         near = s;

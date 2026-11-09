@@ -343,10 +343,14 @@ describe('multiplayer table', () => {
     expect(table.turn?.playerId).toBe(b.id);
   });
 
-  it('chips can be reset outside a round', async () => {
+  it('chips can be refilled outside a round, but only when down to 100 or less', async () => {
     const { table } = makeTable({ solo: true });
-    const p = table.addPlayer('Ana');
-    table.addBet(p.id, 500);
+    const p = table.addPlayer('Ana', undefined, null, 120);
+    expect(table.resetChips(p.id)).toMatch(/100 chips or less/);
+    table.addBet(p.id, 25);
+    expect(table.resetChips(p.id)).toMatch(/100 chips or less/); // a bet still on the felt counts
+    table.clearBet(p.id);
+    p.balance = 90;
     expect(table.resetChips(p.id)).toBeNull();
     expect(p.balance).toBe(1000);
     expect(p.bet).toBe(0);

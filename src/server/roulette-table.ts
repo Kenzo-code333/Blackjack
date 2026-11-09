@@ -16,6 +16,8 @@ import {
   type RoulettePhase,
   type RoulettePlayer,
   type RouletteState,
+  REFILL_LIMIT,
+  REFILL_MESSAGE,
   cleanLook,
 } from '../shared/protocol.js';
 import { type BotPersonality, botLine, newBot, replyKind } from './bots.js';
@@ -223,6 +225,7 @@ export class RouletteTable {
     const p = this.players.get(id);
     if (!p) return 'Not at this table';
     if (this.phase === 'spinning') return 'Wait until the ball stops';
+    if (p.balance + this.totalBets(p) > REFILL_LIMIT) return REFILL_MESSAGE;
     p.bets.clear();
     p.balance = this.startingBalance;
     this.changed();

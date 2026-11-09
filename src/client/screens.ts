@@ -5,6 +5,7 @@
 //   join     → someone sent you an invite
 
 import { type GameKind, LOOK_OPTIONS, type Look } from '../shared/protocol.js';
+import type { SoundName } from './audio.js';
 import { h, toast } from './dom.js';
 import { RULES, rulesContent } from './rules.js';
 import { prefs } from './storage.js';
@@ -197,6 +198,8 @@ export interface LobbyActions {
   editProfile: () => void;
   /** Back to the 3D casino floor (from the list). */
   floorView?: () => void;
+  /** Sound effects (the slot machines use them). */
+  play?: (name: SoundName, opts?: { gain?: number; delay?: number }) => void;
 }
 
 export function stepper(min: number, max: number, start: number, label: string): { el: HTMLElement; value: () => number } {
@@ -313,6 +316,26 @@ export function lobbyScreen(a: LobbyActions): { el: HTMLElement; dispose(): void
     h('button', { class: 'btn link rules-link', onclick: () => a.rules('roulette') }, '📖 How to play Roulette'),
   );
 
+  const slots = h(
+    'article',
+    { class: 'game-card slots' },
+    h('div', { class: 'game-art', 'aria-hidden': 'true' }, h('span', { class: 'art-reels' }, h('i', {}, '7'), h('i', {}, '7'), h('i', {}, '7'))),
+    h('h2', {}, 'Slot machines'),
+    h('p', { class: 'tagline' }, 'Pull the lever and line up three of a kind!'),
+    h('p', { class: 'game-facts' }, 'Bets 5 to 100 · Three diamonds pay 100×'),
+    h(
+      'div',
+      { class: 'game-actions' },
+      h('button', {
+        class: 'btn gold big',
+        onclick: async () => {
+          const { SlotMachine } = await import('./slot-machine.js');
+          el.append(new SlotMachine({ play: a.play }).el);
+        },
+      }, '🎰 Play the slots'),
+    ),
+  );
+
   // Join a friend's table.
   const code = h('input', {
     class: 'field code',
@@ -372,7 +395,7 @@ export function lobbyScreen(a: LobbyActions): { el: HTMLElement; dispose(): void
     h('header', { class: 'lobby-top' }, marquee(true), profile),
     h('h1', { class: 'screen-title center' }, 'Choose your table'),
     a.floorView ? h('div', { class: 'center' }, h('button', { class: 'btn gold', onclick: a.floorView }, '🚶 Walk the casino floor in 3D')) : null,
-    h('div', { class: 'game-cards' }, blackjack, roulette, poker),
+    h('div', { class: 'game-cards' }, blackjack, roulette, poker, slots),
     friends,
     h('p', { class: 'fine-print' }, 'Play money only. No real money, ever.'),
   );

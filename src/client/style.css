@@ -2490,3 +2490,398 @@ h1 {
   border-radius: 9px 9px 3px 3px;
   background: var(--hair);
 }
+
+/* ---------- Slot machine ---------- */
+
+.slot-overlay {
+  --sym: clamp(64px, 12vh, 104px);
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 16px;
+  background: radial-gradient(ellipse at 50% 30%, rgba(60, 10, 22, 0.88), rgba(5, 3, 3, 0.96) 70%);
+  backdrop-filter: blur(6px);
+  animation: slot-in 0.35s ease-out;
+  user-select: none;
+  overflow-y: auto;
+}
+@keyframes slot-in {
+  from {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+}
+.slot-machine {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.slot-cabinet {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 0 22px 20px;
+  border-radius: 38px 38px 22px 22px;
+  background:
+    linear-gradient(90deg, rgba(255, 255, 255, 0.07), transparent 20%, transparent 80%, rgba(255, 255, 255, 0.05)),
+    linear-gradient(#5c0f1d, #2b0610 60%, #17030a);
+  border: 3px solid #d9d9de;
+  box-shadow:
+    inset 0 0 0 4px #7a7a82,
+    inset 0 0 0 7px #e6e6ea,
+    0 30px 80px rgba(0, 0, 0, 0.7),
+    0 0 60px rgba(255, 60, 90, 0.15);
+}
+.slot-topper {
+  position: relative;
+  margin-top: -2px;
+  width: calc(100% + 26px);
+  padding: 16px 20px 14px;
+  border-radius: 34px 34px 14px 14px;
+  background: linear-gradient(#1b0b2e, #0b0414);
+  border: 3px solid #e9c46a;
+  text-align: center;
+  overflow: hidden;
+}
+.slot-title {
+  position: relative;
+  font: 900 clamp(1.6rem, 4.6vh, 2.5rem) / 1 var(--serif);
+  letter-spacing: 0.08em;
+  color: #ffe08a;
+  text-shadow: 0 0 10px #ff9d00, 0 0 26px rgba(255, 120, 0, 0.7);
+}
+.slot-title span {
+  color: #ff4f6d;
+  text-shadow: 0 0 10px #ff2d55, 0 0 24px rgba(255, 45, 85, 0.7);
+}
+.slot-bulbs {
+  position: absolute;
+  inset: 4px;
+  display: flex;
+  justify-content: space-between;
+  pointer-events: none;
+}
+.slot-bulbs i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #fff3c4;
+  box-shadow: 0 0 8px 2px #ffd166;
+  animation: bulb 1.2s infinite;
+}
+.slot-bulbs i:nth-child(2n) {
+  animation-delay: 0.6s;
+}
+@keyframes bulb {
+  50% {
+    opacity: 0.25;
+    box-shadow: none;
+  }
+}
+.slot-overlay.won .slot-bulbs i {
+  animation-duration: 0.25s;
+}
+.slot-window {
+  position: relative;
+  display: flex;
+  gap: 8px;
+  padding: 10px;
+  border-radius: 16px;
+  background: linear-gradient(#c9c9cf, #6c6c74);
+  box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.6), 0 0 0 3px #2a0712;
+}
+.reel {
+  position: relative;
+  width: calc(var(--sym) * 1.12);
+  height: calc(var(--sym) * 3);
+  overflow: hidden;
+  border-radius: 8px;
+  background: #fbf7ec;
+}
+/* The reel is a drum: darker at the top and bottom edges. */
+.reel::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(rgba(0, 0, 0, 0.55), rgba(0, 0, 0, 0) 28%, rgba(255, 255, 255, 0.12) 50%, rgba(0, 0, 0, 0) 72%, rgba(0, 0, 0, 0.55));
+}
+.reel-strip {
+  display: flex;
+  flex-direction: column;
+  will-change: transform;
+}
+.reel-strip .sym {
+  width: 100%;
+  height: var(--sym);
+  padding: 12%;
+  object-fit: contain;
+  flex: none;
+}
+.reel.blur .reel-strip {
+  filter: blur(1.6px);
+}
+.payline {
+  position: absolute;
+  left: 4px;
+  right: 4px;
+  top: 50%;
+  height: 3px;
+  margin-top: -1.5px;
+  background: linear-gradient(90deg, transparent, #ffd166 6%, #ffd166 94%, transparent);
+  box-shadow: 0 0 8px #ffb703;
+  pointer-events: none;
+}
+.slot-overlay.won .payline {
+  height: 5px;
+  animation: payline 0.35s 6 alternate;
+}
+@keyframes payline {
+  to {
+    background: #fff;
+    box-shadow: 0 0 18px 4px #ffd166;
+  }
+}
+.slot-message {
+  min-height: 1.4em;
+  font: 700 1.1rem var(--serif);
+  color: #f6d78a;
+  text-align: center;
+}
+.slot-overlay.won .slot-message {
+  color: #fff;
+  font-size: 1.35rem;
+  text-shadow: 0 0 14px #ffd166;
+}
+.slot-overlay.big .slot-cabinet {
+  animation: big-win 0.18s 10 alternate;
+}
+@keyframes big-win {
+  to {
+    box-shadow:
+      inset 0 0 0 4px #7a7a82,
+      inset 0 0 0 7px #e6e6ea,
+      0 0 90px 20px rgba(255, 209, 102, 0.6);
+  }
+}
+.slot-leds {
+  display: flex;
+  gap: 10px;
+}
+.led {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 96px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: #0c0303;
+  border: 2px solid #3d0d14;
+  box-shadow: inset 0 0 12px rgba(0, 0, 0, 0.9);
+}
+.led > span {
+  font: 700 0.62rem var(--sans);
+  letter-spacing: 0.18em;
+  color: #a37a7a;
+}
+.led b {
+  font: 700 1.25rem ui-monospace, 'SFMono-Regular', Menlo, monospace;
+  color: #ff3b3b;
+  text-shadow: 0 0 8px rgba(255, 40, 40, 0.8);
+  font-variant-numeric: tabular-nums;
+}
+.led .led-win {
+  color: #ffd166;
+  text-shadow: 0 0 8px rgba(255, 200, 80, 0.9);
+}
+.bet-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.slot-btn {
+  min-width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  border: 1px solid #8a8a92;
+  background: linear-gradient(#f2f2f4, #9a9aa2);
+  color: #1a1a1a;
+  font-weight: 900;
+  cursor: pointer;
+}
+.slot-btn.wide {
+  padding: 0 14px;
+  height: 44px;
+  border-radius: 12px;
+}
+.slot-deck {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.slot-spin {
+  min-width: 150px;
+  height: 58px;
+  border-radius: 999px;
+  border: 3px solid #ffd7d7;
+  background: radial-gradient(ellipse at 50% 25%, #ff6b6b, #c8102e 55%, #6e0614);
+  color: #fff;
+  font: 900 1.4rem var(--sans);
+  letter-spacing: 0.12em;
+  cursor: pointer;
+  box-shadow: 0 5px 0 #5a060c, 0 10px 26px rgba(255, 40, 60, 0.5), inset 0 2px 0 rgba(255, 255, 255, 0.4);
+}
+.slot-spin:active:not(:disabled) {
+  transform: translateY(3px);
+  box-shadow: 0 2px 0 #5a060c;
+}
+.slot-spin:disabled {
+  filter: grayscale(0.5) brightness(0.8);
+  cursor: wait;
+}
+.slot-lever {
+  position: relative;
+  width: 44px;
+  height: 230px;
+  margin-left: -6px;
+  border: none;
+  background: none;
+  cursor: pointer;
+}
+.lever-base {
+  position: absolute;
+  left: 0;
+  top: 120px;
+  width: 26px;
+  height: 70px;
+  border-radius: 0 12px 12px 0;
+  background: linear-gradient(90deg, #8a8a92, #f2f2f4, #8a8a92);
+}
+.lever-rod {
+  position: absolute;
+  left: 18px;
+  bottom: 95px;
+  width: 10px;
+  height: 120px;
+  border-radius: 5px;
+  background: linear-gradient(90deg, #8a8a92, #ffffff, #8a8a92);
+  transform-origin: 50% 100%;
+  transition: transform 0.15s;
+}
+.lever-ball {
+  position: absolute;
+  left: -14px;
+  top: -30px;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #ff8a8a, #c8102e 55%, #5a060c);
+  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.6);
+}
+.slot-lever:hover .lever-rod {
+  transform: rotate(8deg);
+}
+.slot-lever.pull .lever-rod {
+  animation: pull 0.6s ease-in-out;
+}
+@keyframes pull {
+  40% {
+    transform: scaleY(-0.55);
+  }
+}
+.pay-table {
+  position: absolute;
+  inset: 70px 10px auto;
+  z-index: 2;
+  padding: 14px 16px;
+  border-radius: 14px;
+  background: rgba(12, 6, 8, 0.97);
+  border: 2px solid #e9c46a;
+}
+.pay-table h3 {
+  margin: 0 0 4px;
+  font: 800 1.2rem var(--serif);
+  color: #f6d78a;
+}
+.pay-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 2px 0;
+  border-bottom: 1px solid rgba(232, 200, 120, 0.15);
+}
+.pay-syms img {
+  width: 30px;
+  height: 30px;
+}
+.pay-row b {
+  color: #ffd166;
+}
+.slot-close {
+  padding: 10px 18px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: rgba(0, 0, 0, 0.55);
+  color: var(--text);
+  font-weight: 700;
+  cursor: pointer;
+}
+.go.sl {
+  background: linear-gradient(#6d2fb0, #33125a);
+}
+.station-card.slots {
+  background: radial-gradient(ellipse at 50% 0%, rgba(109, 47, 176, 0.97), rgba(40, 14, 70, 0.97) 75%);
+}
+.game-card.slots {
+  background: radial-gradient(ellipse at 50% 0%, #6d2fb0, #2a0d4a 75%);
+}
+.art-reels {
+  position: absolute;
+  left: 10px;
+  top: 10px;
+  display: flex;
+  gap: 4px;
+  padding: 6px;
+  border-radius: 10px;
+  background: linear-gradient(#d9d9de, #7a7a82);
+}
+.art-reels i {
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 64px;
+  border-radius: 5px;
+  background: #fbf7ec;
+  color: #c8102e;
+  font: 900 2.2rem Georgia, serif;
+  font-style: normal;
+  text-shadow: 0 0 0 #000, 1px 1px 0 #f2c94c;
+}
+@media (max-width: 520px) {
+  .slot-overlay {
+    --sym: clamp(54px, 17vw, 80px);
+  }
+  .slot-cabinet {
+    padding: 0 12px 14px;
+  }
+  .slot-lever {
+    display: none;
+  }
+  .led {
+    min-width: 0;
+    flex: 1;
+  }
+  .slot-leds {
+    width: 100%;
+  }
+}
+.floor-go .muted {
+  white-space: nowrap;
+}

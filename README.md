@@ -7,8 +7,9 @@ open a link. No accounts, no installs, play money only.
 
 - **Your avatar and nickname** first, then a **3D casino floor** you walk around: go up to a
   table to play, press the red **Leave** button to walk away (a simple list view is there too)
-- **Your chips go with you** from table to table (you start with 1,000); refill to 1,000 any
-  time, or **cash out** at the Cashier into your vault
+- **Your chips go with you** from table to table (you start with 1,000). A free refill to
+  1,000 is there only when you're down to 100 chips or less; **cash out** at the Cashier into your vault
+- **Slot machines** you can play: three reels, a lever, bets 5 to 100, about 96% paid back over time
 - **Roulette**: single-zero wheel with a real ball spin, tap the layout to bet, bots and friends
 - **Leaving is safe for hosts**: if the host leaves, the table keeps going and a friend becomes host
 - **Blackjack**: 6-deck shoe, dealer stands on soft 17, blackjack pays 3 to 2, up to 5 players

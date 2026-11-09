@@ -1,4 +1,4 @@
-import { type Look, STARTING_CHIPS, cleanChips, cleanLook, randomLook } from '../shared/protocol.js';
+import { type Look, REFILL_LIMIT, STARTING_CHIPS, cleanChips, cleanLook, randomLook } from '../shared/protocol.js';
 
 // localStorage / sessionStorage that never throws (private mode, blocked cookies…).
 
@@ -120,3 +120,8 @@ export const prefs = {
     store.local.set('bj:low', v ? '1' : '0');
   },
 };
+
+/** Free refills are only for players who are down to REFILL_LIMIT chips (pocket and vault together). */
+export function canRefill(pocket: number = prefs.chips): boolean {
+  return pocket + prefs.vault <= REFILL_LIMIT;
+}

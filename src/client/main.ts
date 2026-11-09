@@ -238,6 +238,7 @@ function showLobby(): void {
       : undefined,
     rules: (game) => go(`/rules/${game}`),
     editProfile: () => go('/'),
+    play: (name, opts) => sound.play(name, opts),
   };
   const listView = store.local.get('bj:lobby') === 'list';
   if (listView) {

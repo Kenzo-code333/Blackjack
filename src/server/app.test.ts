@@ -288,13 +288,15 @@ describe('socket server', () => {
     expect(s.game).toBe('roulette');
     expect((await call(me, 'action', { action: 'hit' })).ok).toBe(false);
   });
-  it('you bring your own chips to a table, and can refill to 1,000', async () => {
-    const me = await client();
-    const created = await call<JoinResult>(me, 'room:create', { name: 'Ana', solo: true, chips: 2500 });
-    expect(created.ok).toBe(true);
-    const s = await me.next((x) => x.players.length === 1);
-    expect(s.players[0]!.balance).toBe(2500);
-    expect((await call(me, 'chips:reset')).ok).toBe(true);
-    expect((await me.next((x) => x.players[0]!.balance === 1000)).players[0]!.balance).toBe(1000);
+  it('you bring your own chips to a table, and can refill to 1,000 only when down to 100 or less', async () => {
+    const rich = await client();
+    expect((await call<JoinResult>(rich, 'room:create', { name: 'Ana', solo: true, chips: 2500 })).ok).toBe(true);
+    expect((await rich.next((x) => x.players.length === 1)).players[0]!.balance).toBe(2500);
+    expect((await call(rich, 'chips:reset')).ok).toBe(false);
+    const broke = await client();
+    expect((await call<JoinResult>(broke, 'room:create', { name: 'Bo', solo: true, chips: 60 })).ok).toBe(true);
+    expect((await broke.next((x) => x.players.length === 1)).players[0]!.balance).toBe(60);
+    expect((await call(broke, 'chips:reset')).ok).toBe(true);
+    expect((await broke.next((x) => x.players[0]!.balance === 1000)).players[0]!.balance).toBe(1000);
   });
 });

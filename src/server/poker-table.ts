@@ -27,6 +27,8 @@ import {
   type PokerPhase,
   type PokerPlayer,
   type PokerState,
+  REFILL_LIMIT,
+  REFILL_MESSAGE,
   cleanLook,
 } from '../shared/protocol.js';
 import { type BotPersonality, botLine, newBot, replyKind } from './bots.js';
@@ -254,6 +256,7 @@ export class PokerTable {
     const p = this.players.get(id);
     if (!p) return 'Not at this table';
     if (p.inHand && this.isBetting()) return 'Wait until this hand is over';
+    if (p.balance + p.bet > REFILL_LIMIT) return REFILL_MESSAGE;
     p.balance = this.startingStack;
     this.changed();
     this.maybeStart();

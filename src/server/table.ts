@@ -33,7 +33,7 @@ import {
   split,
   stand,
 } from '../game/index.js';
-import { type Look, MAX_SEATS, type Phase, type PublicPlayer, type PublicState, type TableEvent, cleanLook } from '../shared/protocol.js';
+import { type Look, MAX_SEATS, type Phase, type PublicPlayer, type PublicState, REFILL_LIMIT, REFILL_MESSAGE, type TableEvent, cleanLook } from '../shared/protocol.js';
 import { type BotPersonality, botBet, botLine, newBot, replyKind } from './bots.js';
 
 export interface TableTiming {
@@ -282,6 +282,7 @@ export class Table {
     const p = this.players.get(playerId);
     if (!p) return 'Not at this table';
     if (p.inRound && this.phase !== 'results') return 'Wait until the round is over';
+    if (p.balance + p.bet > REFILL_LIMIT) return REFILL_MESSAGE;
     p.balance = this.rules.startingBalance;
     p.bet = 0;
     p.ready = false;

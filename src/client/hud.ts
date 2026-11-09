@@ -8,6 +8,7 @@ import { OUTCOME_TEXT, SUIT_SYMBOL, bannerText, isRed, money, pocketName, pokerB
 import { PokerControls } from './hud-poker.js';
 import { RouletteControls } from './hud-roulette.js';
 import { rulesContent } from './rules.js';
+import { canRefill } from './storage.js';
 import type { Net } from './net.js';
 
 export interface SoundControls {
@@ -81,6 +82,8 @@ export class Hud {
   private readonly hostBtn: HTMLButtonElement;
   private readonly seatRow = h('div', { class: 'row seat' });
   private readonly brokeRow = h('div', { class: 'row broke' });
+  private refillBtn!: HTMLButtonElement;
+  private panelRefillBtn!: HTMLButtonElement;
   private readonly chatPanel: HTMLElement;
   private readonly chatLog = h('div', { class: 'chat-log', 'aria-live': 'polite' });
   private readonly chatInput = h('input', { class: 'chat-input', maxlength: 200, placeholder: 'Say something…', 'aria-label': 'Chat message' });
@@ -187,18 +190,19 @@ export class Hud {
       h('button', { class: 'btn gold', onclick: press(() => send(net.resetChips())) }, 'Refill to 1,000'),
     );
 
-    const refill = h(
+    const refill = (this.refillBtn = h(
       'button',
       {
         class: 'refill-btn',
-        title: 'Refill your chips to 1,000',
-        'aria-label': 'Refill chips to 1,000',
+        hidden: true,
+        title: 'Free refill to 1,000 chips (when you are down to 100 or less)',
+        'aria-label': 'Free refill to 1,000 chips',
         onclick: press(() => {
           if (confirm('Refill your chips back to 1,000?')) void send(net.resetChips());
         }),
       },
       '↻',
-    );
+    ));
     const wallet = h('div', { class: 'wallet' }, h('span', {}, 'Chips ', this.balanceEl, refill), h('span', {}, 'Bet ', this.betEl));
     if (opts.game === 'poker') this.poker = new PokerControls(net, press);
     if (opts.game === 'roulette') this.roulette = new RouletteControls(net, press, opts.play);
@@ -251,7 +255,7 @@ export class Hud {
       h(
         'div',
         { class: 'panel-foot' },
-        h('button', { class: 'btn ghost small', onclick: press(() => send(net.resetChips())) }, 'Refill to 1,000 chips'),
+        (this.panelRefillBtn = h('button', { class: 'btn ghost small', hidden: true, onclick: press(() => send(net.resetChips())) }, 'Free refill to 1,000 chips')),
         h('button', { class: 'btn ghost small', onclick: press(() => opts.onLeave()) }, 'Leave table'),
       ),
     );
@@ -480,6 +484,7 @@ export class Hud {
     show(this.seatRow, Boolean(me && me.seat === null && freeSeat));
     const broke = Boolean(me && me.seat !== null && !me.inRound && me.balance + me.bet < state.limits.minBet);
     show(this.brokeRow, broke);
+    this.showRefill(me && me.seat !== null ? me.balance + me.bet : null, state.phase !== 'betting' && me?.inRound === true && state.phase !== 'results');
 
     this.renderPlayers(state);
   }
@@ -507,6 +512,7 @@ export class Hud {
     const freeSeat = seated.length < 6;
     show(this.seatRow, Boolean(me && me.seat === null && freeSeat));
     show(this.brokeRow, Boolean(me && me.seat !== null && me.balance === 0 && !me.inHand));
+    this.showRefill(me && me.seat !== null ? me.balance + me.bet : null, Boolean(me?.inHand && state.phase !== 'waiting' && state.phase !== 'results'));
     // Your big win gets a celebration.
     const myWin = state.phase === 'results' ? state.winners.find((w) => w.playerId === this.net.me) : undefined;
     const key = `${state.round}`;
@@ -540,6 +546,7 @@ export class Hud {
     this.addBotBtn.hidden = !canAddBot;
     show(this.seatRow, Boolean(me && me.seat === null && seated.length < 6));
     show(this.brokeRow, Boolean(me && me.seat !== null && me.balance + staked < state.limits.minBet && state.phase !== 'spinning'));
+    this.showRefill(me && me.seat !== null ? me.balance + staked : null, state.phase === 'spinning');
     const key = `${state.round}`;
     if (state.phase === 'results' && me && me.won > 0 && this.celebratedHand !== key) {
       this.celebratedHand = key;
@@ -548,6 +555,15 @@ export class Hud {
       this.opts.play?.('chip');
     }
     this.renderPlayers(state);
+  }
+
+  /** The free refill shows only for players down to 100 chips or less (vault included). */
+  private showRefill(chips: number | null, busy: boolean): void {
+    const ok = chips !== null && !busy && canRefill(chips);
+    this.refillBtn.hidden = !ok;
+    this.panelRefillBtn.hidden = !ok;
+    // Chips in your vault come first: take them out at the Cashier.
+    if (!ok) this.brokeRow.hidden = true;
   }
 
   private renderPlayers(state: AnyState): void {

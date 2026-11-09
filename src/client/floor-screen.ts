@@ -2,12 +2,13 @@
 // "Join with code", quick "walk to" buttons, the touch stick, and the card that opens
 // when you walk up to a table (Play solo / with bots / host for friends / how to play).
 
-import { type GameKind, STARTING_CHIPS } from '../shared/protocol.js';
+import { type GameKind, REFILL_LIMIT, STARTING_CHIPS } from '../shared/protocol.js';
+import type { SlotMachine } from './slot-machine.js';
 import { h, toast } from './dom.js';
 import { money } from './format.js';
 import { RULES } from './rules.js';
 import { CASINO_NAME, type LobbyActions, avatarBadge, stepper } from './screens.js';
-import { prefs, store } from './storage.js';
+import { canRefill, prefs, store } from './storage.js';
 import type { CasinoFloor3D, Station, StationId } from './three/casino-floor.js';
 
 export interface FloorScreenOptions extends LobbyActions {
@@ -69,7 +70,7 @@ export function floorScreen(a: FloorScreenOptions): { el: HTMLElement; dispose()
     if (!joinBox.hidden) code.focus();
   } }, '🎟️ Join with code');
 
-  // Your chips: they come with you to every table. Refill to 1,000 any time.
+  // Your chips: they come with you to every table. Down to 100 or less? Refill to 1,000.
   const chipsText = h('b', {}, money(prefs.chips));
   const wallet = h(
     'div',
@@ -81,10 +82,11 @@ export function floorScreen(a: FloorScreenOptions): { el: HTMLElement; dispose()
       'button',
       {
         class: 'refill-btn',
-        title: 'Refill to 1,000 chips',
-        'aria-label': 'Refill chips to 1,000',
+        title: 'Free refill to 1,000 chips',
+        'aria-label': 'Free refill to 1,000 chips',
         onclick: () => {
-          prefs.chips = Math.max(prefs.chips, STARTING_CHIPS);
+          if (!canRefill()) return toast(`Free refills are only for when you're down to ${REFILL_LIMIT} chips or less`, 'error');
+          prefs.chips = STARTING_CHIPS;
           showChips();
           toast('Chips refilled to 1,000');
         },
@@ -92,8 +94,13 @@ export function floorScreen(a: FloorScreenOptions): { el: HTMLElement; dispose()
       '↻',
     ),
   );
+  const refillBtn = wallet.querySelector('.refill-btn') as HTMLButtonElement;
 
-  const showChips = () => (chipsText.textContent = money(prefs.chips));
+  const showChips = () => {
+    chipsText.textContent = money(prefs.chips);
+    refillBtn.hidden = !canRefill();
+  };
+  showChips();
 
   let floor: CasinoFloor3D | null = null;
   const walk = (id: StationId) => floor?.goTo(id);
@@ -116,8 +123,38 @@ export function floorScreen(a: FloorScreenOptions): { el: HTMLElement; dispose()
     h('button', { class: 'go bj', onclick: () => walk('blackjack-solo') }, '🂡 Blackjack'),
     h('button', { class: 'go rl', onclick: () => walk('roulette') }, '🎡 Roulette'),
     h('button', { class: 'go pk', onclick: () => walk('poker') }, '♣ Poker'),
+    h('button', { class: 'go sl', onclick: () => walk('slots-left') }, '🎰 Slots'),
     h('button', { class: 'go cs', onclick: () => walk('cashier') }, '💰 Cashier'),
   );
+
+  // Playing a slot machine: the machine covers the floor, which pauses meanwhile.
+  let machine: SlotMachine | null = null;
+  const openSlots = async () => {
+    if (machine) return;
+    const { SlotMachine } = await import('./slot-machine.js');
+    machine = new SlotMachine({
+      play: a.play,
+      onChips: () => showChips(),
+      onClose: () => {
+        machine = null;
+        floor?.setPaused(false);
+        if (lastNear) fill(lastNear);
+      },
+    });
+    floor?.setPaused(true);
+    el.append(machine.el);
+  };
+  let lastNear: Station | null = null;
+  /** At a row of slot machines. */
+  const fillSlots = () => {
+    card.className = 'station-card slots';
+    card.replaceChildren(
+      h('div', { class: 'station-head' }, h('h2', {}, 'Slot machines'), h('p', { class: 'tagline' }, 'Pull the lever and line up three of a kind!')),
+      h('div', { class: 'cash-row' }, h('span', {}, 'Your chips'), h('b', {}, `${money(prefs.chips)}`)),
+      h('div', { class: 'game-actions' }, h('button', { class: 'btn gold big', onclick: () => void openSlots() }, '🎰 Play the slots')),
+      h('p', { class: 'muted small' }, 'Bets from 5 to 100 chips. Three diamonds pay 100 times your bet. Plays with the chips in your pocket.'),
+    );
+  };
 
   // The card for the table you're standing at.
   const card = h('aside', { class: 'station-card', hidden: true, 'aria-live': 'polite' });
@@ -164,14 +201,16 @@ export function floorScreen(a: FloorScreenOptions): { el: HTMLElement; dispose()
         }, `🏦 Take ${money(vault)} chips from the vault`),
         h('button', {
           class: 'btn ghost',
-          disabled: chips >= STARTING_CHIPS,
+          disabled: !canRefill(),
           onclick: () => {
+            if (!canRefill()) return;
             prefs.chips = STARTING_CHIPS;
             showChips();
             fillCashier('Here are 1,000 fresh chips, on the house.');
           },
         }, '↻ Free refill to 1,000 chips'),
       ),
+      canRefill() ? null : h('p', { class: 'muted small' }, `Free refills are only for players down to ${REFILL_LIMIT} chips or less (pocket and vault together).`),
       prefs.bestCashOut > 0 ? h('p', { class: 'muted small' }, `Biggest cash-out: ${money(prefs.bestCashOut)} chips`) : null,
       h('p', { class: 'muted small' }, 'Play money only: chips are just for fun and can’t be exchanged for real money.'),
       ].filter(Boolean) as HTMLElement[]),
@@ -180,6 +219,8 @@ export function floorScreen(a: FloorScreenOptions): { el: HTMLElement; dispose()
 
   const fill = (s: Station) => {
     lastStation.set(s.id);
+    lastNear = s;
+    if (s.kind === 'slots') return fillSlots();
     if (!s.game) return fillCashier();
     const game: GameKind = s.game;
     const bots = stepper(1, game === 'blackjack' ? 4 : 5, game === 'blackjack' ? 3 : 4, 'bots');
@@ -241,6 +282,7 @@ export function floorScreen(a: FloorScreenOptions): { el: HTMLElement; dispose()
     el,
     dispose() {
       disposed = true;
+      machine?.close();
       delete document.body.dataset.floorReady;
       floor?.dispose();
       me.dispose();

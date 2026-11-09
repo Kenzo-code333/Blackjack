@@ -53,6 +53,10 @@ export const CHIP_VALUES = [5, 25, 100, 500] as const;
 /** Everyone walks in with this many chips, and can refill to it any time. */
 export const STARTING_CHIPS = 1000;
 
+/** Free refills to STARTING_CHIPS are only for players down to this many chips or fewer. */
+export const REFILL_LIMIT = 100;
+export const REFILL_MESSAGE = `Free refills are only for when you're down to ${REFILL_LIMIT} chips or less`;
+
 /** The chips a player brings to a table (their wallet). Play money, so any sane amount is fine. */
 export function cleanChips(raw: unknown): number {
   const n = Math.floor(Number(raw));
