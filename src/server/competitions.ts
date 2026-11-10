@@ -8,11 +8,10 @@
 import { randomBytes, randomInt } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { type ChallengeBoard, type ChallengeInfo, cleanLook } from '../shared/protocol.js';
+import { type ChallengeBoard, type ChallengeInfo, cleanChallengeMinutes, cleanLook } from '../shared/protocol.js';
 import { cleanName } from './rooms.js';
 
 const ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
-export const DURATIONS_MIN = [10, 30, 60, 1440] as const;
 export const START_CHIPS = [1000, 5000] as const;
 const MAX_PLAYERS = 50;
 /** Scores sent this soon after the end still count (the last report on the way). */
@@ -54,7 +53,7 @@ export class ChallengeStore {
   create(raw: { name?: unknown; minutes?: unknown; startChips?: unknown; player?: { name?: unknown; look?: unknown } }): Res<{ code: string; playerId: string; secret: string; info: ChallengeInfo }> {
     const host = cleanName(raw.player?.name);
     if (!host) return { ok: false, error: 'Please enter your nickname first' };
-    const minutes = DURATIONS_MIN.includes(Number(raw.minutes) as (typeof DURATIONS_MIN)[number]) ? Number(raw.minutes) : 30;
+    const minutes = cleanChallengeMinutes(raw.minutes);
     const startChips = START_CHIPS.includes(Number(raw.startChips) as (typeof START_CHIPS)[number]) ? Number(raw.startChips) : 1000;
     this.prune();
     let code: string;

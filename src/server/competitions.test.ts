@@ -26,4 +26,21 @@ describe('challenges', () => {
     expect(store.board(created.code)!.players[0]!.name).toBe('Bo');
     expect(store.join(created.code, { name: 'Late' }).ok).toBe(false);
   });
+
+  it('lasts as long as the host chooses, from 1 minute to 7 days', () => {
+    const now = 5_000_000;
+    const store = new ChallengeStore(null, () => now);
+    const length = (minutes: unknown) => {
+      const c = store.create({ minutes, player: { name: 'Ana' } });
+      if (!c.ok) throw new Error(c.error);
+      return (c.info.endsAt - now) / 60_000;
+    };
+    expect(length(1)).toBe(1);
+    expect(length(45)).toBe(45);
+    expect(length(2 * 24 * 60 + 90)).toBe(2970); // 2 days 1 h 30 min
+    expect(length(7 * 24 * 60)).toBe(10_080);
+    expect(length(0)).toBe(30); // out of range: the default
+    expect(length(8 * 24 * 60)).toBe(30);
+    expect(length('abc')).toBe(30);
+  });
 });

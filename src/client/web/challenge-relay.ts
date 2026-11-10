@@ -5,7 +5,7 @@
 // Watching the leaderboard = subscribing to <ns>/challenge/<CODE>/#.
 
 import type { ChallengeBoard, ChallengeInfo, ChallengePlayer } from '../../shared/protocol.js';
-import { cleanLook } from '../../shared/protocol.js';
+import { cleanChallengeMinutes, cleanLook } from '../../shared/protocol.js';
 import type { ChallengeBackend } from '../challenge-api.js';
 import { BROKERS, Mqtt } from './relay.js';
 
@@ -97,7 +97,7 @@ export const relayChallenges: ChallengeBackend = {
     // Make sure nobody else is using this code.
     for (let tries = 0; tries < 3 && (await snapshot(code, 1500)); tries++) code = randomCode();
     const now = Date.now();
-    const minutes = [10, 30, 60, 1440].includes(o.minutes) ? o.minutes : 30;
+    const minutes = cleanChallengeMinutes(o.minutes);
     const info: ChallengeInfo = { code, name: o.name.slice(0, 40) || `${o.player.name}’s challenge`, host: o.player.name, startChips: o.startChips === 5000 ? 5000 : 1000, createdAt: now, endsAt: now + minutes * 60_000 };
     if (!(await publish(`${NS}/${code}/info`, JSON.stringify(info)))) return { ok: false, error: 'Couldn’t reach the online service. Check your internet connection.' };
     const playerId = randomId(6);

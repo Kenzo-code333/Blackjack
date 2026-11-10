@@ -273,6 +273,16 @@ export type RouletteEvent =
 
 // ---------- Challenges (competitions between friends) ----------
 
+/** Challenges last from 1 minute to 7 days, chosen by whoever starts one. */
+export const CHALLENGE_MIN_MINUTES = 1;
+export const CHALLENGE_MAX_MINUTES = 7 * 24 * 60;
+
+/** Any whole number of minutes in range; anything else becomes 30. */
+export function cleanChallengeMinutes(raw: unknown): number {
+  const n = Math.round(Number(raw));
+  return Number.isFinite(n) && n >= CHALLENGE_MIN_MINUTES && n <= CHALLENGE_MAX_MINUTES ? n : 30;
+}
+
 export interface ChallengeInfo {
   code: string;
   name: string;

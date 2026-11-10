@@ -16,7 +16,7 @@ open a link. No accounts, no installs, play money only.
   table to play, press the red **Leave** button to walk away (a simple list view is there too)
 - **Your chips go with you** from table to table (you start with 1,000). A free refill to
   1,000 is there only when you're down to 100 chips or less; **cash out** at the Cashier into your vault
-- **Challenges between friends** (🏆): start one with a time limit (10 min to 1 day), send the
+- **Challenges between friends** (🏆): start one lasting as long as you like (quick picks, or any days / hours / minutes from 1 minute to 7 days), send the
   code or link, everyone gets the same fresh stack (1,000 or 5,000) and plays any game; a live
   leaderboard shows who's ahead and whoever has the most chips when time runs out wins. Normal
   chips are put aside and come back at the end; refills and the vault are closed meanwhile.

@@ -6,7 +6,7 @@
 // can top up. Your chip count is sent as you play; the leaderboard updates live. When the
 // clock runs out, scores freeze, everyone sees the podium and gets their normal chips back.
 
-import type { ChallengeBoard, ChallengeInfo } from '../shared/protocol.js';
+import { CHALLENGE_MAX_MINUTES, CHALLENGE_MIN_MINUTES, type ChallengeBoard, type ChallengeInfo } from '../shared/protocol.js';
 import type { ChallengeBackend } from './challenge-api.js';
 import { h, toast } from './dom.js';
 import { money } from './format.js';
@@ -24,12 +24,90 @@ interface Saved {
   savedChips: number;
 }
 
+/** Quick picks; "Custom" lets you set any length from 1 minute to 7 days. */
 const DURATIONS: [number, string][] = [
-  [10, '10 min'],
+  [5, '5 min'],
+  [15, '15 min'],
   [30, '30 min'],
   [60, '1 hour'],
   [1440, '1 day'],
 ];
+
+/** "2 days 3 hours 15 minutes". */
+export function lengthText(minutes: number): string {
+  const d = Math.floor(minutes / 1440);
+  const hh = Math.floor((minutes % 1440) / 60);
+  const mm = minutes % 60;
+  const part = (n: number, one: string) => (n ? `${n} ${one}${n === 1 ? '' : 's'}` : '');
+  return [part(d, 'day'), part(hh, 'hour'), part(mm, 'minute')].filter(Boolean).join(' ') || '0 minutes';
+}
+
+/** Choose how long the challenge lasts: a quick pick, or any days / hours / minutes. */
+function durationPicker(start = 30): { el: HTMLElement; value: () => number | null } {
+  let minutes = start;
+  let custom = false;
+  const num = (label: string, max: number, value: number) =>
+    h('input', { class: 'field dur-field', type: 'number', min: 0, max, step: 1, value, inputmode: 'numeric', 'aria-label': label });
+  const days = num('Days', 7, 0);
+  const hours = num('Hours', 23, 0);
+  const mins = num('Minutes', 59, 30);
+  const summary = h('p', { class: 'dur-summary', 'aria-live': 'polite' });
+  const customRow = h(
+    'div',
+    { class: 'dur-custom', hidden: true },
+    h('label', {}, days, h('span', {}, 'days')),
+    h('label', {}, hours, h('span', {}, 'hours')),
+    h('label', {}, mins, h('span', {}, 'minutes')),
+  );
+  const fromFields = () => {
+    const v = (el: HTMLInputElement) => Math.max(0, Math.floor(Number(el.value) || 0));
+    return v(days) * 1440 + v(hours) * 60 + v(mins);
+  };
+  const value = () => {
+    const m = custom ? fromFields() : minutes;
+    return m >= CHALLENGE_MIN_MINUTES && m <= CHALLENGE_MAX_MINUTES ? m : null;
+  };
+  const showSummary = () => {
+    const m = value();
+    if (m === null) {
+      summary.textContent = 'Pick between 1 minute and 7 days.';
+      summary.classList.add('bad');
+      return;
+    }
+    summary.classList.remove('bad');
+    const end = new Date(Date.now() + m * 60_000);
+    const when = end.toLocaleString(undefined, { weekday: m >= 1440 ? 'short' : undefined, hour: '2-digit', minute: '2-digit' });
+    summary.textContent = `Lasts ${lengthText(m)} · ends around ${when}`;
+  };
+  const row = h('div', { class: 'choice-row' });
+  const draw = () => {
+    row.replaceChildren(
+      ...DURATIONS.map(([v, label]) =>
+        h('button', { class: `pill${!custom && minutes === v ? ' on' : ''}`, type: 'button', onclick: () => ((minutes = v), (custom = false), draw()) }, label),
+      ),
+      h('button', {
+        class: `pill${custom ? ' on' : ''}`,
+        type: 'button',
+        onclick: () => {
+          if (!custom) {
+            // Start the custom boxes from the current choice.
+            days.value = String(Math.floor(minutes / 1440));
+            hours.value = String(Math.floor((minutes % 1440) / 60));
+            mins.value = String(minutes % 60);
+          }
+          custom = true;
+          draw();
+          mins.focus();
+        },
+      }, '⚙️ Custom'),
+    );
+    customRow.hidden = !custom;
+    showSummary();
+  };
+  for (const f of [days, hours, mins]) f.addEventListener('input', showSummary);
+  draw();
+  return { el: h('div', { class: 'dur-picker' }, row, customRow, summary), value };
+}
 
 function load(): Saved | null {
   try {
@@ -232,7 +310,7 @@ class ChallengeManager {
 
   private renderStart(tab: 'start' | 'join', code: string): void {
     if (!this.modal) return;
-    let minutes = 30;
+    const duration = durationPicker();
     let chips = 1000;
     const error = h('p', { class: 'login-error', hidden: true });
     const fail = (msg: string | null) => {
@@ -265,15 +343,25 @@ class ChallengeManager {
     };
     const startForm = h(
       'form',
-      { class: 'challenge-form', onsubmit: go(() => this.create(name.value.trim(), minutes, chips)) },
+      {
+        class: 'challenge-form',
+        onsubmit: go(async () => {
+          const minutes = duration.value();
+          if (minutes === null) return 'Choose a length between 1 minute and 7 days';
+          return this.create(name.value.trim(), minutes, chips);
+        }),
+      },
       h('label', { class: 'field-label' }, 'Name (optional)'),
       name,
       h('label', { class: 'field-label' }, 'How long?'),
-      choice(DURATIONS, () => minutes, (v) => (minutes = v)),
+      duration.el,
       h('label', { class: 'field-label' }, 'Everyone starts with'),
       choice([[1000, '1,000 chips'], [5000, '5,000 chips']], () => chips, (v) => (chips = v)),
       h('button', { class: 'btn gold big', type: 'submit' }, '🏆 Start the challenge'),
     );
+    // Changing anything clears an old error message.
+    startForm.addEventListener('input', () => fail(null));
+    startForm.addEventListener('click', (e) => (e.target as HTMLElement).closest('.pill') && fail(null));
     const joinForm = h(
       'form',
       { class: 'challenge-form', onsubmit: go(() => this.join(codeField.value)) },
@@ -350,7 +438,7 @@ class ChallengeManager {
         { class: 'challenge-card wide' },
         h('button', { class: 'icon-btn close-x', 'aria-label': 'Close', onclick: () => this.close() }, '✕'),
         h('h2', {}, `🏆 ${s.info.name}`),
-        h('div', { class: 'challenge-head' }, h('span', { class: 'challenge-clock' }, left > 0 ? `${clock(left)} left` : 'Time’s up!'), h('span', { class: 'muted' }, `Started by ${s.info.host} · everyone began with ${money(s.info.startChips)}`)),
+        h('div', { class: 'challenge-head' }, h('span', { class: 'challenge-clock' }, left > 0 ? `${clock(left)} left` : 'Time’s up!'), h('span', { class: 'muted' }, `Started by ${s.info.host} · lasts ${lengthText(Math.round((s.info.endsAt - s.info.createdAt) / 60_000))} · everyone began with ${money(s.info.startChips)}`)),
         h('ol', { class: 'leaderboard' }, ...(rows.length ? rows : [h('li', { class: 'muted' }, 'Loading the leaderboard…')])),
         h(
           'div',
