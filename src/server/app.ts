@@ -9,6 +9,7 @@ import { Server, type Socket } from 'socket.io';
 import type { Action } from '../game/index.js';
 import { type Ack, type ClientToServer, type JoinResult, type PokerAction, type ServerToClient, cleanChips, cleanLook } from '../shared/protocol.js';
 import { AccountStore } from './accounts.js';
+import { ChallengeStore } from './competitions.js';
 import { PokerTable } from './poker-table.js';
 import { RouletteTable } from './roulette-table.js';
 import { Table } from './table.js';
@@ -26,7 +27,7 @@ export interface GameServer {
   close(): Promise<void>;
 }
 
-export function createGameServer(settings: Partial<RoomSettings> = {}, accounts = new AccountStore()): GameServer {
+export function createGameServer(settings: Partial<RoomSettings> = {}, accounts = new AccountStore(), challenges = new ChallengeStore()): GameServer {
   const app = express();
   app.disable('x-powered-by');
   const http = createServer(app);
@@ -76,6 +77,37 @@ export function createGameServer(settings: Partial<RoomSettings> = {}, accounts 
     if (error) return res.status(error.startsWith('Please') ? 401 : 400).json({ ok: false, error });
     res.json({ ok: true });
   });
+  // ---------- Challenges ----------
+  const challengeLimit = new Map<string, RateLimiter>();
+  const tooMany = (ip: string | undefined) => {
+    const key = ip ?? '?';
+    let r = challengeLimit.get(key);
+    if (!r) {
+      if (challengeLimit.size > 5000) challengeLimit.clear();
+      r = new RateLimiter(60, 60_000);
+      challengeLimit.set(key, r);
+    }
+    return !r.allow();
+  };
+  app.post('/api/challenge', json, (req, res) => {
+    if (tooMany(req.ip)) return res.status(429).json({ ok: false, error: 'Slow down a little' });
+    res.json(challenges.create(req.body ?? {}));
+  });
+  app.post('/api/challenge/:code/join', json, (req, res) => {
+    if (tooMany(req.ip)) return res.status(429).json({ ok: false, error: 'Slow down a little' });
+    res.json(challenges.join(req.params.code, req.body?.player ?? {}));
+  });
+  app.post('/api/challenge/:code/score', json, (req, res) => {
+    if (tooMany(req.ip)) return res.status(429).json({ ok: false, error: 'Slow down a little' });
+    const error = challenges.report(req.params.code, req.body?.playerId, req.body?.secret, req.body?.chips);
+    res.json(error ? { ok: false, error } : { ok: true });
+  });
+  app.get('/api/challenge/:code', (req, res) => {
+    const board = challenges.board(req.params.code);
+    if (!board) return res.status(404).json({ ok: false, error: 'No challenge with that code' });
+    res.json({ ok: true, board });
+  });
+
   app.post('/api/logout', (req, res) => {
     accounts.logOut(bearer(req));
     res.json({ ok: true });
@@ -290,6 +322,7 @@ export function createGameServer(settings: Partial<RoomSettings> = {}, accounts 
       new Promise((resolve) => {
         rooms.closeAll();
         accounts.flush();
+        challenges.flush();
         void io.close(() => resolve());
       }),
   };

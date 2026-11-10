@@ -12,7 +12,7 @@
 import { store } from './storage.js';
 
 /** Everything that makes up your profile. */
-const PROFILE_KEYS = ['bj:name', 'bj:look', 'bj:chips', 'bj:vault', 'bj:best', 'bj:stats', 'bj:music', 'bj:sfx', 'bj:voice', 'bj:muted', 'bj:low'];
+const PROFILE_KEYS = ['bj:name', 'bj:look', 'bj:chips', 'bj:vault', 'bj:best', 'bj:stats', 'bj:music', 'bj:sfx', 'bj:voice', 'bj:muted', 'bj:low', 'bj:challenge'];
 const SESSION_KEY = 'bj:account';
 const GUEST_KEY = 'bj:guest';
 

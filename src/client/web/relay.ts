@@ -171,6 +171,12 @@ export class Mqtt {
     this.ws?.send(packet(8, 2, concat(Uint8Array.from([id >> 8, id & 255]), str(filter), Uint8Array.from([0]))));
   }
 
+  unsubscribe(filter: string): void {
+    this.handlers.delete(filter);
+    const id = this.packetId++;
+    if (this.ws?.readyState === 1) this.ws.send(packet(10, 2, concat(Uint8Array.from([id >> 8, id & 255]), str(filter))));
+  }
+
   publish(topic: string, payload: string, retain = false): void {
     if (this.ws?.readyState !== 1) return;
     this.ws.send(packet(3, retain ? 1 : 0, concat(str(topic), enc.encode(payload))));

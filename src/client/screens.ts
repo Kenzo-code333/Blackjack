@@ -214,6 +214,7 @@ function statsPanel(): HTMLElement {
       game('Roulette', s.roulette, 'spins'),
       game('Poker', s.poker, 'hands'),
       game('Slots', s.slots, 'spins'),
+      tile('Challenges', s.challenges.played ? `${fmt(s.challenges.won)} / ${fmt(s.challenges.played)}` : '–', s.challenges.played ? 'challenges won' : 'none yet: start one!'),
     ),
   );
 }
@@ -319,6 +320,8 @@ export interface LobbyActions {
   editProfile: () => void;
   /** Back to the 3D casino floor (from the list). */
   floorView?: () => void;
+  /** Open the challenge window. */
+  challenge?: () => void;
   /** Sound effects (the slot machines use them). */
   play?: (name: SoundName, opts?: { gain?: number; delay?: number }) => void;
 }
@@ -515,7 +518,7 @@ export function lobbyScreen(a: LobbyActions): { el: HTMLElement; dispose(): void
     { class: 'casino-screen lobby' },
     h('header', { class: 'lobby-top' }, marquee(true), profile),
     h('h1', { class: 'screen-title center' }, 'Choose your table'),
-    a.floorView ? h('div', { class: 'center' }, h('button', { class: 'btn gold', onclick: a.floorView }, '🚶 Walk the casino floor in 3D')) : null,
+    h('div', { class: 'center lobby-actions' }, a.floorView ? h('button', { class: 'btn gold', onclick: a.floorView }, '🚶 Walk the casino floor in 3D') : null, a.challenge ? h('button', { class: 'btn small challenge-btn', onclick: a.challenge }, '🏆 Challenge your friends') : null),
     h('div', { class: 'game-cards' }, blackjack, roulette, poker, slots),
     friends,
     h('p', { class: 'fine-print' }, 'Play money only. No real money, ever.'),

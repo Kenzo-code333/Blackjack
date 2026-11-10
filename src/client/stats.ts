@@ -18,6 +18,8 @@ export interface Stats {
   roulette: GameStats;
   slots: GameStats & { jackpots: number };
   biggestWin: number;
+  /** Challenges finished, and how many you won. */
+  challenges: { played: number; won: number };
   since: number;
 }
 
@@ -25,7 +27,7 @@ const KEY = 'bj:stats';
 const blank = (): GameStats => ({ played: 0, won: 0, net: 0 });
 
 export function readStats(): Stats {
-  const fresh: Stats = { blackjack: blank(), poker: blank(), roulette: blank(), slots: { ...blank(), jackpots: 0 }, biggestWin: 0, since: Date.now() };
+  const fresh: Stats = { blackjack: blank(), poker: blank(), roulette: blank(), slots: { ...blank(), jackpots: 0 }, biggestWin: 0, challenges: { played: 0, won: 0 }, since: Date.now() };
   try {
     const saved = JSON.parse(store.local.get(KEY) ?? 'null') as Partial<Stats> | null;
     if (!saved || typeof saved !== 'object') return fresh;
@@ -40,6 +42,7 @@ export function readStats(): Stats {
       roulette: game(saved.roulette),
       slots: { ...game(saved.slots), jackpots: num((saved.slots as Record<string, unknown> | undefined)?.jackpots) },
       biggestWin: num(saved.biggestWin),
+      challenges: { played: num(saved.challenges?.played), won: num(saved.challenges?.won) },
       since: num(saved.since) || Date.now(),
     };
   } catch {
@@ -60,6 +63,13 @@ export function recordPlay(game: 'blackjack' | 'poker' | 'roulette' | 'slots', n
   g.net += net;
   if (jackpot) s.slots.jackpots++;
   s.biggestWin = Math.max(s.biggestWin, net);
+  write(s);
+}
+
+export function recordChallenge(won: boolean): void {
+  const s = readStats();
+  s.challenges.played++;
+  if (won) s.challenges.won++;
   write(s);
 }
 

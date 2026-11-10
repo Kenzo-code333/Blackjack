@@ -123,5 +123,11 @@ export const prefs = {
 
 /** Free refills are only for players who are down to REFILL_LIMIT chips (pocket and vault together). */
 export function canRefill(pocket: number = prefs.chips): boolean {
+  if (inChallenge()) return false; // everyone plays with the same stack
   return pocket + prefs.vault <= REFILL_LIMIT;
+}
+
+/** In a challenge (see challenge.ts): refills and the vault are closed meanwhile. */
+export function inChallenge(): boolean {
+  return store.local.get('bj:challenge') !== null;
 }

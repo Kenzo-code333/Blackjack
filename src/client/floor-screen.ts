@@ -8,7 +8,8 @@ import { h, toast } from './dom.js';
 import { money } from './format.js';
 import { RULES } from './rules.js';
 import { CASINO_NAME, type LobbyActions, avatarBadge, stepper } from './screens.js';
-import { canRefill, prefs, store } from './storage.js';
+import { canRefill, inChallenge, prefs, store } from './storage.js';
+import { challenge } from './challenge.js';
 import type { CasinoFloor3D, Station, StationId } from './three/casino-floor.js';
 
 export interface FloorScreenOptions extends LobbyActions {
@@ -122,6 +123,7 @@ export function floorScreen(a: FloorScreenOptions): { el: HTMLElement; dispose()
     h('div', { class: 'floor-brand' }, h('span', { class: 'suit red' }, '♥'), CASINO_NAME, h('span', { class: 'suit' }, '♠')),
     h('div', { class: 'spacer' }),
     wallet,
+    h('button', { class: 'btn small challenge-btn', onclick: () => challenge.open() }, '🏆 Challenge'),
     joinBtn,
     h('button', { class: 'btn ghost small', onclick: a.listView, title: 'A simple list of all the games' }, '☰ List'),
     profile,
@@ -188,7 +190,7 @@ export function floorScreen(a: FloorScreenOptions): { el: HTMLElement; dispose()
         { class: 'game-actions' },
         h('button', {
           class: 'btn gold big',
-          disabled: chips <= 0,
+          disabled: chips <= 0 || inChallenge(),
           onclick: () => {
             const n = prefs.chips;
             if (n <= 0) return;
@@ -203,7 +205,7 @@ export function floorScreen(a: FloorScreenOptions): { el: HTMLElement; dispose()
         }, `💵 Cash out ${money(chips)} chips`),
         h('button', {
           class: 'btn ghost',
-          disabled: vault <= 0,
+          disabled: vault <= 0 || inChallenge(),
           onclick: () => {
             prefs.chips = prefs.chips + prefs.vault;
             prefs.vault = 0;
@@ -222,7 +224,9 @@ export function floorScreen(a: FloorScreenOptions): { el: HTMLElement; dispose()
           },
         }, '↻ Free refill to 1,000 chips'),
       ),
-      canRefill() ? null : h('p', { class: 'muted small' }, `Free refills are only for players down to ${REFILL_LIMIT} chips or less (pocket and vault together).`),
+      inChallenge()
+        ? h('p', { class: 'muted small' }, 'The vault and free refills are closed while you’re in a challenge: everyone plays with the same stack.')
+        : canRefill() ? null : h('p', { class: 'muted small' }, `Free refills are only for players down to ${REFILL_LIMIT} chips or less (pocket and vault together).`),
       prefs.bestCashOut > 0 ? h('p', { class: 'muted small' }, `Biggest cash-out: ${money(prefs.bestCashOut)} chips`) : null,
       h('p', { class: 'muted small' }, 'Play money only: chips are just for fun and can’t be exchanged for real money.'),
       ].filter(Boolean) as HTMLElement[]),

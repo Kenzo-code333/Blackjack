@@ -16,6 +16,12 @@ open a link. No accounts, no installs, play money only.
   table to play, press the red **Leave** button to walk away (a simple list view is there too)
 - **Your chips go with you** from table to table (you start with 1,000). A free refill to
   1,000 is there only when you're down to 100 chips or less; **cash out** at the Cashier into your vault
+- **Challenges between friends** (🏆): start one with a time limit (10 min to 1 day), send the
+  code or link, everyone gets the same fresh stack (1,000 or 5,000) and plays any game; a live
+  leaderboard shows who's ahead and whoever has the most chips when time runs out wins. Normal
+  chips are put aside and come back at the end; refills and the vault are closed meanwhile.
+  On the server version challenges are kept on the server; the file and website use the
+  public relays. (Chip counts are sent by each player's browser: it's for fun between friends.)
 - **Slot machines** you can play: three reels, a lever, bets 5 to 100, about 96% paid back over time
 - **Roulette**: single-zero wheel with a real ball spin, tap the layout to bet, bots and friends
 - **Leaving is safe for hosts**: if the host leaves, the table keeps going and a friend becomes host

@@ -271,6 +271,35 @@ export type RouletteEvent =
   | { type: 'result'; number: number; winners: { playerId: string; amount: number }[] }
   | { type: 'clear' };
 
+// ---------- Challenges (competitions between friends) ----------
+
+export interface ChallengeInfo {
+  code: string;
+  name: string;
+  /** Who started it. */
+  host: string;
+  /** Everyone starts with this many chips. */
+  startChips: number;
+  createdAt: number;
+  /** When the clock runs out (ms since 1970). */
+  endsAt: number;
+}
+
+export interface ChallengePlayer {
+  id: string;
+  name: string;
+  look: Look;
+  chips: number;
+  /** When this count was sent. */
+  at: number;
+}
+
+export interface ChallengeBoard {
+  info: ChallengeInfo;
+  /** Most chips first. */
+  players: ChallengePlayer[];
+}
+
 export type AnyState = PublicState | PokerState | RouletteState;
 export type AnyEvent = TableEvent | PokerEvent | RouletteEvent;
 

@@ -15,6 +15,8 @@ import type { AnyState, GameKind } from '../shared/protocol.js';
 import type { TableRenderer } from './renderer.js';
 import { floorScreen, lastStation } from './floor-screen.js';
 import { account } from './account.js';
+import { challenge } from './challenge.js';
+import { serverChallenges } from './challenge-api.js';
 import { CASINO_NAME, type LobbyActions, type OpenTableInfo, joinScreen, lobbyScreen, loginScreen, profileScreen, rulesScreen } from './screens.js';
 import { trackRound } from './stats.js';
 import { prefs, store } from './storage.js';
@@ -172,6 +174,15 @@ async function openTable(res: Awaited<ReturnType<Net['create']>>): Promise<void>
 const GAME_TITLE: Record<GameKind, string> = { blackjack: 'Blackjack', poker: 'Texas Hold’em', roulette: 'Roulette' };
 
 /** The home page: your avatar and table nickname. */
+/** After sign-in: a challenge invite link opens the challenge window, ready to join. */
+function openInvitedChallenge(): void {
+  const code = store.session.get('bj:joinChallenge');
+  if (!code || !prefs.name) return;
+  store.session.remove('bj:joinChallenge');
+  if (challenge.inChallenge) return toast('Finish (or leave) your current challenge to join another one');
+  setTimeout(() => challenge.open('join', code), 500);
+}
+
 function showProfile(): void {
   document.title = `${CASINO_NAME} · Blackjack, Roulette & Poker`;
   const screen = profileScreen(() => go('/lobby'), {
@@ -183,6 +194,7 @@ function showProfile(): void {
   mount(screen.el, screen.dispose);
   // Download the 3D casino floor while you pick your look, so "Enter the casino" is quick.
   setTimeout(() => void import('./three/casino-floor.js').catch(() => {}), 400);
+  openInvitedChallenge();
 }
 
 /** The casino floor: walk around in 3D (or a simple list), then pick a table. */
@@ -218,6 +230,7 @@ function showLogin(): void {
 }
 
 function showLobby(): void {
+  openInvitedChallenge();
   document.title = `${CASINO_NAME} · Casino floor`;
   const name = () => prefs.name || 'Player';
   const actions: LobbyActions = {
@@ -278,6 +291,7 @@ function showLobby(): void {
     rules: (game) => go(`/rules/${game}`),
     editProfile: () => go('/'),
     play: (name, opts) => sound.play(name, opts),
+    challenge: () => challenge.open(),
   };
   const listView = store.local.get('bj:lobby') === 'list';
   if (listView) {
@@ -544,6 +558,16 @@ function showTableFor(code: string, game: GameKind): void {
     renderer?.dispose();
   };
 }
+
+// A challenge invite link (…?challenge=ABC123): remember the code until you're signed in.
+const invitedChallenge = new URLSearchParams(location.search).get('challenge')?.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
+if (invitedChallenge?.length === 6) store.session.set('bj:joinChallenge', invitedChallenge);
+
+challenge.init({
+  backend: !PREVIEW ? serverChallenges : (preview?.challenges ?? null),
+  link: (code) => (preview ? preview.inviteLink(code).replace(/\?table=.*$/, `?challenge=${code}`) : `${location.origin}/?challenge=${code}`),
+  atTable: () => net.session !== null,
+});
 
 // Sign back in (if you were) before showing anything.
 void account.init({ server: !PREVIEW, cloud: preview?.cloud ?? null }).finally(() => route());
