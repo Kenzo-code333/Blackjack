@@ -11,6 +11,7 @@ import { blobShadow, canvasTex, makeSign } from './decor.js';
 import { cardBackMaterial, cardFaceMaterial, glowTexture, suitPath, woodTexture } from './textures.js';
 import { makeChip } from './pieces.js';
 import { buildDoorway } from './doorway.js';
+import { pottedPlant } from './plants.js';
 import type { Suit } from '../../game/index.js';
 import type { Station, WorldCtx } from './world-types.js';
 
@@ -611,26 +612,19 @@ function blobShadowAt(p: THREE.Vector3, size: number): THREE.Mesh {
 /** Plants, a sideboard with a record player, wall sconces. */
 export function buildLoungeDecor(ctx: WorldCtx): void {
   const { x: X, z: Z } = LOUNGE_SIZE;
-  const leafMat = new THREE.MeshStandardMaterial({ color: 0x2f6a34, roughness: 0.7, side: THREE.DoubleSide });
-  const potMat = new THREE.MeshStandardMaterial({ color: 0xe9e2d0, roughness: 0.4 });
-  for (const [px, pz] of [
-    [-X + 0.8, -Z + 0.8],
-    [X - 0.8, -Z + 0.8],
-    [-X + 0.8, Z - 0.8],
-    [X - 0.8, Z - 0.8],
-    [-1.7, -Z + 0.7],
-    [1.7, -Z + 0.7],
-  ] as const) {
-    const pot = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.22, 0.55, 20), potMat);
-    pot.position.set(px, 0.275, pz);
-    ctx.add(pot);
-    for (let i = 0; i < 8; i++) {
-      const leaf = new THREE.Mesh(new THREE.PlaneGeometry(0.24, 0.9), leafMat);
-      const a = (i / 8) * Math.PI * 2;
-      leaf.position.set(px + Math.cos(a) * 0.25, 1.0, pz + Math.sin(a) * 0.25);
-      leaf.rotation.set(0.8, -a + Math.PI / 2, 0);
-      ctx.add(leaf);
-    }
+  // Palms in the corners, rubber plants either side of the window.
+  for (const [i, [px, pz, kind]] of ([
+    [-X + 0.95, -Z + 0.95, 'palm'],
+    [X - 0.95, -Z + 0.95, 'palm'],
+    [-X + 0.95, Z - 0.95, 'palm'],
+    [X - 0.95, Z - 0.95, 'palm'],
+    [-1.7, -Z + 0.7, 'leafy'],
+    [1.7, -Z + 0.7, 'leafy'],
+  ] as const).entries()) {
+    const plant = pottedPlant(kind, 'cream', { height: 0.55, radius: 0.28, size: kind === 'palm' ? 1.15 : 1, seed: i + 3 });
+    plant.position.set(px, 0, pz);
+    plant.rotation.y = i * 1.3;
+    ctx.add(plant);
     ctx.collide(px, pz, 0.45);
   }
   // Sideboard with a record player on the right wall.

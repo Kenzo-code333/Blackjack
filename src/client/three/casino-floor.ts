@@ -22,6 +22,7 @@ import { carpetTexture, glowTexture, setMaxAnisotropy, woodTexture } from './tex
 import { ARCADE_SIZE, ARCADE_SPAWN, ARCADE_STATIONS, buildArcadeShell, buildCabinets, buildGiantScreen } from './arcade-room.js';
 import { blobShadow, canvasTex, makeSign } from './decor.js';
 import { buildDoorway } from './doorway.js';
+import { pottedPlant } from './plants.js';
 import { LOUNGE_SIZE, LOUNGE_SPAWN, LOUNGE_STATIONS, botSeats, buildCorner, buildLoungeDecor, buildLoungeShell } from './lounge-room.js';
 import type { Room, Station, StationId, WorldCtx } from './world-types.js';
 import { Animator, damp } from './tween.js';
@@ -566,27 +567,19 @@ export class CasinoFloor3D {
         this.target.add(rope);
       }
     }
-    // Palms in big pots.
-    const leafMat = new THREE.MeshStandardMaterial({ color: 0x2f5d2c, roughness: 0.7, side: THREE.DoubleSide });
-    const potMat = new THREE.MeshPhysicalMaterial({ color: 0x1b1b1b, roughness: 0.3, clearcoat: 1 });
-    for (const [px, pz] of [
-      [-10.6, 10.6],
-      [10.6, 10.6],
-      [-10.6, -10.6],
-      [10.6, -10.6],
-      [-3.4, 10.4],
-      [3.4, 10.4],
-    ] as const) {
-      const pot = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.26, 0.7, 20), potMat);
-      pot.position.set(px, 0.35, pz);
-      this.target.add(pot);
-      for (let i = 0; i < 9; i++) {
-        const leaf = new THREE.Mesh(new THREE.PlaneGeometry(0.28, 1.1), leafMat);
-        const a = (i / 9) * Math.PI * 2;
-        leaf.position.set(px + Math.cos(a) * 0.35, 1.3, pz + Math.sin(a) * 0.35);
-        leaf.rotation.set(0.9, -a + Math.PI / 2, 0);
-        this.target.add(leaf);
-      }
+    // Palms in big glossy pots; rubber plants either side of the entrance.
+    for (const [i, [px, pz, kind]] of ([
+      [-10.6, 10.6, 'palm'],
+      [10.6, 10.6, 'palm'],
+      [-10.6, -10.6, 'palm'],
+      [10.6, -10.6, 'palm'],
+      [-3.4, 10.4, 'leafy'],
+      [3.4, 10.4, 'leafy'],
+    ] as const).entries()) {
+      const plant = pottedPlant(kind, 'black', { height: 0.7, radius: 0.34, size: kind === 'palm' ? 1.45 : 1.25, seed: i + 11 });
+      plant.position.set(px, 0, pz);
+      plant.rotation.y = i * 1.7;
+      this.target.add(plant);
       this.colliders.push({ x: px, z: pz, r: 0.6 });
     }
     // The cashier's cage at the back wall.
