@@ -182,7 +182,7 @@ export function floorScreen(a: FloorScreenOptions): { el: HTMLElement; dispose()
       onChips: () => showChips(),
       onClose: () => {
         machine = null;
-        floor?.setPaused(false);
+        if (!chatting) floor?.setPaused(false);
         if (lastNear) fill(lastNear);
       },
     });
@@ -344,6 +344,15 @@ export function floorScreen(a: FloorScreenOptions): { el: HTMLElement; dispose()
   const el = h('main', { class: `floor-screen room-${a.room}` }, stage, loading, top, joinBox, hint, goButtons, card, stickGuide, stick, standBtn);
 
   let disposed = false;
+  // While the chats cover the screen the room rests (nothing to draw behind them).
+  let chatting = false;
+  const onChatOpen = () => ((chatting = true), floor?.setPaused(true));
+  const onChatClose = () => {
+    chatting = false;
+    if (!machine) floor?.setPaused(false);
+  };
+  window.addEventListener('bj:chat-open', onChatOpen);
+  window.addEventListener('bj:chat-close', onChatClose);
   void (async () => {
     try {
       const [{ CasinoFloor3D, stationsOf }, { webglAvailable }] = await Promise.all([import('./three/casino-floor.js'), import('./three/scene3d.js')]);
@@ -378,6 +387,7 @@ export function floorScreen(a: FloorScreenOptions): { el: HTMLElement; dispose()
       };
       // The doors open once the room can draw smoothly.
       await floor.ready;
+      if (chatting) floor.setPaused(true);
       document.body.dataset.floorReady = '1';
       a.onWorld?.(floor);
       if (location.search.includes('debug') || store.local.get('bj:debug')) (globalThis as { bjFloor?: unknown }).bjFloor = floor;
@@ -398,6 +408,8 @@ export function floorScreen(a: FloorScreenOptions): { el: HTMLElement; dispose()
     el,
     dispose() {
       disposed = true;
+      window.removeEventListener('bj:chat-open', onChatOpen);
+      window.removeEventListener('bj:chat-close', onChatClose);
       a.onWorld?.(null);
       machine?.close();
       delete document.body.dataset.floorReady;

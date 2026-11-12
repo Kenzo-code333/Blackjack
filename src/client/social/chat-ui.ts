@@ -1,10 +1,12 @@
-// The chat window, laid out like WhatsApp: a round 💬 button opens a panel with your
+// The chat window: a round chip button opens a full-screen "salon" with your character on one side
 // chats (the global chat on top, then DMs and groups by latest message, unread counts),
 // everyone who plays (online first, with Message / Add friend), and your friends (with
 // requests to accept). Inside a chat: bubbles, times, who's online, a box to type in.
 
 import { h, toast } from '../dom.js';
-import { avatarBadge } from '../screens.js';
+import { avatarBadge, characterPreview } from '../screens.js';
+import { prefs } from '../storage.js';
+import { money } from '../format.js';
 import { type Conversation, type Message, type Person, social } from './social.js';
 
 type View = { kind: 'list'; tab: 'chats' | 'people' | 'friends' } | { kind: 'conv'; id: string } | { kind: 'new-group' } | { kind: 'group-info'; gid: string } | { kind: 'add-to-group'; gid: string };
@@ -23,7 +25,11 @@ const clock = (t: number) => new Date(t).toLocaleTimeString([], { hour: '2-digit
 
 class ChatUi {
   private readonly fab = h('button', { class: 'chat-fab', 'aria-label': 'Chats', title: 'Chats and friends' }, '💬', h('span', { class: 'chat-fab-badge', hidden: true }));
-  private readonly panel = h('aside', { class: 'chat-sheet', hidden: true, 'aria-label': 'Chats' });
+  private readonly panel = h('aside', { class: 'chat-sheet', 'aria-label': 'Chats' });
+  /** Your character on one side, the chats on the other. */
+  private readonly stage = h('section', { class: 'chat-stage' });
+  private readonly overlay = h('div', { class: 'chat-overlay', hidden: true }, this.stage, this.panel);
+  private preview: { dispose(): void } | null = null;
   private view: View = { kind: 'list', tab: 'chats' };
   private search = '';
   private draft = new Map<string, string>();
@@ -34,14 +40,14 @@ class ChatUi {
     if (this.mounted) return;
     this.mounted = true;
     this.fab.addEventListener('click', () => this.toggle());
-    document.body.append(this.fab, this.panel);
+    document.body.append(this.fab, this.overlay);
     social.onChange(() => {
       this.badge();
-      if (!this.panel.hidden) this.render(true);
+      if (!this.overlay.hidden) this.render(true);
     });
     social.onMessage((m) => this.incoming(m));
     window.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape' && !this.panel.hidden) this.close();
+      if (e.key === 'Escape' && !this.overlay.hidden) this.close();
     });
     this.badge();
   }
@@ -54,18 +60,50 @@ class ChatUi {
 
   open(view?: View): void {
     if (view) this.view = view;
-    this.panel.hidden = false;
+    const wasClosed = this.overlay.hidden;
+    this.overlay.hidden = false;
     this.fab.classList.add('open');
+    if (wasClosed) {
+      this.renderStage();
+      // The room behind pauses so the chat stays smooth (and the battery lasts).
+      window.dispatchEvent(new Event('bj:chat-open'));
+    }
     this.render();
   }
 
   close(): void {
-    this.panel.hidden = true;
+    if (this.overlay.hidden) return;
+    this.overlay.hidden = true;
     this.fab.classList.remove('open');
+    this.preview?.dispose();
+    this.preview = null;
+    this.stage.replaceChildren();
+    window.dispatchEvent(new Event('bj:chat-close'));
+  }
+
+  private renderStage(): void {
+    this.preview?.dispose();
+    const pv = characterPreview(prefs.look, 'stage');
+    this.preview = pv;
+    const room = social.room;
+    const online = social.available ? [...social.people.keys()].filter((u) => u !== social.uid && social.isOnline(u)).length : 0;
+    this.stage.replaceChildren(
+      h('div', { class: 'stage-spot', 'aria-hidden': 'true' }),
+      pv.el,
+      h(
+        'div',
+        { class: 'stage-card' },
+        h('div', { class: 'stage-suits', 'aria-hidden': 'true' }, '♠ ♥ ♣ ♦'),
+        h('b', { class: 'stage-name' }, prefs.name || 'Player'),
+        h('div', { class: 'stage-facts' }, h('span', { class: 'stage-chip' }, money(prefs.chips)), h('span', {}, room ? ROOM_NAMES[room]!.replace(/^in /, '') : 'Lobby')),
+        social.available ? h('small', { class: 'stage-online' }, h('i', { class: 'online-dot inline' }), `${online} ${online === 1 ? 'player' : 'players'} online`) : null,
+        h('button', { class: 'btn ghost stage-back', onclick: () => this.close() }, room ? '← Back to the room' : '← Close chats'),
+      ),
+    );
   }
 
   private toggle(): void {
-    if (this.panel.hidden) this.open();
+    if (this.overlay.hidden) this.open();
     else this.close();
   }
 
@@ -78,7 +116,7 @@ class ChatUi {
 
   private incoming(m: Message): void {
     if (m.from === social.uid) return;
-    const viewing = !this.panel.hidden && this.view.kind === 'conv' && this.view.id === m.conv;
+    const viewing = !this.overlay.hidden && this.view.kind === 'conv' && this.view.id === m.conv;
     if (viewing) {
       social.markRead(m.conv);
       return;

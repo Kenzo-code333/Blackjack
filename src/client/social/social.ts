@@ -605,6 +605,11 @@ class Social {
 
   private readonly poses = new Map<string, { x: number; z: number; yaw: number; seat: string | null; at: number }>();
 
+  /** The room you're walking around in, if any. */
+  get room(): Room | null {
+    return this.world?.room ?? null;
+  }
+
   /** The room on screen right now (or null when leaving it). */
   attachWorld(floor: CasinoFloor3D | null, room: Room): void {
     this.world?.stop();
