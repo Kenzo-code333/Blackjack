@@ -7,6 +7,7 @@ import { LOOK_OPTIONS, type Look, randomLook } from '../../shared/protocol.js';
 import { blobShadow, canvasTex, makeSign } from './decor.js';
 import { glowTexture } from './textures.js';
 import type { Station, WorldCtx } from './world-types.js';
+import { buildDoorway } from './doorway.js';
 
 export const ARCADE_SIZE = { x: 12, z: 12, h: 5 };
 export const ARCADE_SPAWN = { pos: new THREE.Vector3(0, 0, 9.6), yaw: 0 };
@@ -219,12 +220,7 @@ export function buildArcadeShell(ctx: WorldCtx): void {
     }
   }
   // The way back to the Lounge.
-  const door = new THREE.Mesh(new THREE.PlaneGeometry(2, 2.8), new THREE.MeshBasicMaterial({ color: 0xffd6a0, toneMapped: false }));
-  door.position.set(0, 1.4, Z - 0.02);
-  door.rotation.y = Math.PI;
-  const sign = makeSign('THE ARCADE', 'Free play · no chips needed', '#7fe3ff', 1.3, '#3bc8ff', 'rgba(4, 8, 30, 0.9)');
-  sign.position.set(0, 3.9, Z - 0.3);
-  ctx.add(door, sign);
+  buildDoorway(ctx, { x: 0, z: Z, facing: -1, to: 'lounge', style: 'neon' });
 
   // Lights: cool blues and pinks. All of them from the start.
   ctx.add(new THREE.HemisphereLight(0x8fb8ff, 0x0a0820, 0.7));

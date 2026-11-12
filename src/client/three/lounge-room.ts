@@ -10,6 +10,7 @@ import { LOOK_OPTIONS, type Look, randomLook } from '../../shared/protocol.js';
 import { blobShadow, canvasTex, makeSign } from './decor.js';
 import { cardBackMaterial, cardFaceMaterial, glowTexture, suitPath, woodTexture } from './textures.js';
 import { makeChip } from './pieces.js';
+import { buildDoorway } from './doorway.js';
 import type { Suit } from '../../game/index.js';
 import type { Station, WorldCtx } from './world-types.js';
 
@@ -405,24 +406,9 @@ export function buildLoungeShell(ctx: WorldCtx): void {
   }
   ctx.add(frame, win);
 
-  // Doorways: glowing archways with signs.
-  for (const [x, color, title, sub] of [
-    [-4.6, 0xffc46b, 'CASINO', 'Blackjack · Roulette · Poker'],
-    [4.6, 0x3bc8ff, 'ARCADE', 'Free games'],
-  ] as const) {
-    const glow = new THREE.Mesh(new THREE.PlaneGeometry(1.8, 2.6), new THREE.MeshBasicMaterial({ color, toneMapped: false }));
-    glow.position.set(x, 1.3, -Z + 0.02);
-    const arch = new THREE.Mesh(new THREE.TorusGeometry(1.05, 0.08, 10, 40, Math.PI), new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 1.2 }));
-    arch.position.set(x, 2.5, -Z + 0.08);
-    for (const s of [-1, 1]) {
-      const post = new THREE.Mesh(new THREE.BoxGeometry(0.16, 2.5, 0.16), new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 1.2 }));
-      post.position.set(x + s * 1.05, 1.25, -Z + 0.08);
-      ctx.add(post);
-    }
-    const sign = makeSign(title, sub, color === 0x3bc8ff ? '#7fe3ff' : '#ffd37a', 0.75, color === 0x3bc8ff ? '#3bc8ff' : '#d9b45a');
-    sign.position.set(x, 3.55, -Z + 0.3);
-    ctx.add(glow, arch, sign);
-  }
+  // Doorways to the Casino and the Arcade.
+  buildDoorway(ctx, { x: -4.6, z: -Z, facing: 1, to: 'casino', style: 'classic' });
+  buildDoorway(ctx, { x: 4.6, z: -Z, facing: 1, to: 'arcade', style: 'classic' });
 
   // Fireplace on the left wall.
   const hearth = new THREE.Group();

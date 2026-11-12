@@ -21,6 +21,7 @@ import { buildRouletteTable, buildWheel } from './roulette-scene.js';
 import { carpetTexture, glowTexture, setMaxAnisotropy, woodTexture } from './textures.js';
 import { ARCADE_SIZE, ARCADE_SPAWN, ARCADE_STATIONS, buildArcadeShell, buildCabinets, buildGiantScreen } from './arcade-room.js';
 import { blobShadow, canvasTex, makeSign } from './decor.js';
+import { buildDoorway } from './doorway.js';
 import { LOUNGE_SIZE, LOUNGE_SPAWN, LOUNGE_STATIONS, botSeats, buildCorner, buildLoungeDecor, buildLoungeShell } from './lounge-room.js';
 import type { Room, Station, StationId, WorldCtx } from './world-types.js';
 import { Animator, damp } from './tween.js';
@@ -356,14 +357,8 @@ export class CasinoFloor3D {
       lamp.target.position.copy(st.pos).setY(TABLE_Y);
       this.scene.add(lamp, lamp.target);
     }
-    // The entrance: a lit archway behind the start point.
-    const arch = new THREE.Mesh(new THREE.PlaneGeometry(3, 3.2), new THREE.MeshBasicMaterial({ color: 0xffd9a0 }));
-    arch.position.set(0, 1.6, Z - 0.02);
-    arch.rotation.y = Math.PI;
-    this.scene.add(arch);
-    const sign = makeSign('THE VELVET ACE', 'Casino · Play money only', '#e7c56c', 1.4);
-    sign.position.set(0, 3.6, Z - 0.3);
-    this.scene.add(sign);
+    // The entrance: the doorway back to the Lounge.
+    buildDoorway(this.ctx, { x: 0, z: Z, facing: -1, to: 'lounge', style: 'classic' });
   }
 
   private chandelier(x: number, z: number, glow: THREE.Texture, withLight: boolean): void {
