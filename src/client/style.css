@@ -2455,6 +2455,7 @@ h1 {
 }
 .avatar-badge {
   position: relative;
+  display: block;
   flex: none;
   width: 40px;
   height: 40px;
@@ -3518,10 +3519,11 @@ h1 {
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
+  justify-content: safe center;
   gap: 18px;
   padding: calc(24px + var(--safe-t)) 20px calc(24px + var(--safe-b));
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
   background:
     radial-gradient(ellipse at 50% 35%, rgba(255, 228, 160, 0.18), transparent 55%),
     radial-gradient(ellipse at 50% 120%, #0c4a30, #072a1c 60%, #041509);
@@ -3550,10 +3552,11 @@ h1 {
 }
 .char-preview.stage {
   position: relative;
-  width: min(100%, 340px);
-  height: auto;
+  flex: none;
+  height: min(50vh, 420px);
+  width: auto;
+  max-width: 100%;
   aspect-ratio: 4 / 5;
-  max-height: 52vh;
   border-radius: 50% 50% 18px 18px / 40% 40% 18px 18px;
   border: 2px solid rgba(227, 188, 95, 0.55);
   background: radial-gradient(ellipse at 50% 30%, rgba(227, 188, 95, 0.22), rgba(0, 0, 0, 0.5) 72%);
@@ -3787,6 +3790,7 @@ h1 {
 }
 .chat-avatar-wrap {
   position: relative;
+  display: block;
   flex: none;
 }
 .online-dot {
@@ -4025,4 +4029,27 @@ h1 {
 }
 .stick-guide.used {
   opacity: 0;
+}
+
+/* A new version of the downloaded game is ready (updater.ts). */
+.update-bar {
+  position: fixed;
+  z-index: 60;
+  left: 50%;
+  top: calc(12px + var(--safe-t));
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+  max-width: calc(100vw - 24px);
+  padding: 10px 14px;
+  border: 1px solid var(--gold-deep);
+  border-radius: 16px;
+  background: linear-gradient(#1c120c, #0f0906);
+  color: var(--text);
+  font-weight: 700;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.55);
+  animation: screen-in 0.3s ease-out;
 }
