@@ -25,6 +25,14 @@ describe('roulette rules', () => {
     expect(spotNumbers('low')).toEqual(Array.from({ length: 18 }, (_, i) => i + 1));
   });
 
+  it('has a green bet on the zero that pays like a single number', () => {
+    expect(spotNumbers('green')).toEqual([0]);
+    expect(spotOdds('green')).toBe(35);
+    expect(betReturn('green', 10, 0)).toBe(360);
+    expect(betReturn('green', 10, 17)).toBe(0);
+    expect(isValidSpot('green')).toBe(true);
+  });
+
   it('accepts only real spots', () => {
     for (const ok of ['n:0', 'n:36', 'red', 'dozen:1', 'col:3', 'high']) expect(isValidSpot(ok)).toBe(true);
     for (const bad of ['n:37', 'n:07', 'n:-1', 'dozen:4', 'blue', 7, null]) expect(isValidSpot(bad)).toBe(false);

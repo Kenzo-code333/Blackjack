@@ -19,7 +19,7 @@ import { TABLE_Y } from './layout.js';
 import { buildPokerTable } from './poker-scene.js';
 import { buildRouletteTable, buildWheel } from './roulette-scene.js';
 import { carpetTexture, glowTexture, setMaxAnisotropy, woodTexture } from './textures.js';
-import { ARCADE_SIZE, ARCADE_SPAWN, ARCADE_STATIONS, buildArcadeShell, buildCabinets, buildGiantScreen } from './arcade-room.js';
+import { ARCADE_SIZE, ARCADE_SPAWN, ARCADE_STATIONS, buildArcadeDecor, buildArcadeShell, buildCabinets, buildGiantScreen } from './arcade-room.js';
 import { blobShadow, canvasTex, makeSign } from './decor.js';
 import { buildDoorway } from './doorway.js';
 import { pottedPlant } from './plants.js';
@@ -212,6 +212,7 @@ export class CasinoFloor3D {
           : [
               ...this.stations.filter((st) => st.kind === 'arcade').map((st) => ({ at: st.pos, build: () => buildCabinets(this.ctx, st) })),
               { at: new THREE.Vector3(0, 0, -8), build: () => buildGiantScreen(this.ctx, this.stations.find((st) => st.kind === 'screen')!) },
+              { at: new THREE.Vector3(0, 0, 4), build: () => buildArcadeDecor(this.ctx) },
             ];
     steps.sort((a, b) => a.at.distanceTo(this.pos) - b.at.distanceTo(this.pos));
     for (const step of steps) {

@@ -71,6 +71,8 @@ export function spotCenter(spot: string): THREE.Vector3 {
   const k = Number(which);
   if (kind === 'col') return at(GX + CW * 12.5, GZ + RH * (3 - k + 0.5));
   if (kind === 'dozen') return at(GX + CW * (4 * (k - 1) + 2), GZ + RH * 3.5);
+  // Green: under the zero, beside the dozens and the even-money bets.
+  if (spot === 'green') return at(GX - CW / 2, GZ + RH * 4);
   const i = ['low', 'even', 'red', 'black', 'odd', 'high'].indexOf(spot);
   return at(GX + CW * (2 * i + 1), GZ + RH * 4.5);
 }
@@ -80,6 +82,7 @@ function spotSize(spot: string): [number, number] {
   if (spot.startsWith('n:')) return spot === 'n:0' ? [CW, RH * 3] : [CW, RH];
   if (spot.startsWith('col:')) return [CW, RH];
   if (spot.startsWith('dozen:')) return [CW * 4, RH];
+  if (spot === 'green') return [CW, RH * 2];
   return [CW * 2, RH];
 }
 
@@ -94,6 +97,7 @@ export function spotAt(x: number, z: number): string | null {
     if (c === 12) return `col:${3 - row}`;
     return null;
   }
+  if (x >= GX - CW && x < GX) return 'green';
   if (x < GX || x >= GX + CW * 12) return null;
   if (row === 3) return `dozen:${Math.floor((x - GX) / (CW * 4)) + 1}`;
   return ['low', 'even', 'red', 'black', 'odd', 'high'][Math.floor((x - GX) / (CW * 2))]!;
@@ -405,6 +409,27 @@ function layoutTexture(): THREE.CanvasTexture {
     };
     box('red', 'RED', diamond(RED));
     box('black', 'BLACK', diamond(BLACK));
+    // Green: a green diamond with its name under it.
+    box('green', 'GREEN', (cx, cz) => {
+      const w = CW * S * 0.36;
+      const hh = RH * S * 0.3;
+      ctx.beginPath();
+      ctx.moveTo(cx - w, cz - hh * 0.6);
+      ctx.lineTo(cx, cz - hh * 1.6);
+      ctx.lineTo(cx + w, cz - hh * 0.6);
+      ctx.lineTo(cx, cz + hh * 0.4);
+      ctx.closePath();
+      ctx.fillStyle = '#0f8a4a';
+      ctx.fill();
+      ctx.strokeStyle = line;
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      ctx.fillStyle = line;
+      ctx.font = `700 ${Math.round(RH * S * 0.22)}px "Playfair Display", Georgia, serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('GREEN', cx, cz + hh * 1.5);
+    });
     // Gold trim around the whole layout, and the house name.
     ctx.strokeStyle = gold;
     ctx.lineWidth = 6;

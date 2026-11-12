@@ -11,6 +11,7 @@ import type { Net } from './net.js';
 const QUICK: [string, string][] = [
   ['red', 'Red'],
   ['black', 'Black'],
+  ['green', 'Green 0'],
   ['odd', 'Odd'],
   ['even', 'Even'],
   ['low', '1–18'],

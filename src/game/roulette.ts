@@ -16,12 +16,13 @@ export function pocketColor(n: number): PocketColor {
  * Where a bet sits on the layout:
  *   n:17      one number (pays 35 to 1)
  *   red, black, odd, even, low (1–18), high (19–36)   (pay 1 to 1)
+ *   green         the zero, the only green pocket       (pays 35 to 1)
  *   dozen:1|2|3   1–12, 13–24, 25–36                  (pays 2 to 1)
  *   col:1|2|3     the three columns (col:1 = 1, 4, 7…) (pays 2 to 1)
  */
 export type BetSpot = string;
 
-export const OUTSIDE_SPOTS = ['red', 'black', 'odd', 'even', 'low', 'high', 'dozen:1', 'dozen:2', 'dozen:3', 'col:1', 'col:2', 'col:3'] as const;
+export const OUTSIDE_SPOTS = ['red', 'black', 'green', 'odd', 'even', 'low', 'high', 'dozen:1', 'dozen:2', 'dozen:3', 'col:1', 'col:2', 'col:3'] as const;
 
 export function isValidSpot(spot: unknown): spot is BetSpot {
   if (typeof spot !== 'string') return false;
@@ -39,6 +40,8 @@ export function spotNumbers(spot: BetSpot): number[] {
       return all.filter((n) => REDS.has(n));
     case 'black':
       return all.filter((n) => !REDS.has(n));
+    case 'green':
+      return [0];
     case 'odd':
       return all.filter((n) => n % 2 === 1);
     case 'even':
@@ -68,7 +71,7 @@ export function betReturn(spot: BetSpot, amount: number, result: number): number
 /** A short name for the layout and the results: "17", "Red", "1st 12", "Column 2". */
 export function spotLabel(spot: BetSpot): string {
   if (spot.startsWith('n:')) return spot.slice(2);
-  const named: Record<string, string> = { red: 'Red', black: 'Black', odd: 'Odd', even: 'Even', low: '1 to 18', high: '19 to 36' };
+  const named: Record<string, string> = { red: 'Red', black: 'Black', green: 'Green', odd: 'Odd', even: 'Even', low: '1 to 18', high: '19 to 36' };
   if (named[spot]) return named[spot]!;
   const [kind, which] = spot.split(':');
   if (kind === 'dozen') return ['1st 12', '2nd 12', '3rd 12'][Number(which) - 1]!;
