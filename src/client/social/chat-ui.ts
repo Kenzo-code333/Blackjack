@@ -29,7 +29,7 @@ class ChatUi {
   /** Your character on one side, the chats on the other. */
   private readonly stage = h('section', { class: 'chat-stage' });
   private readonly overlay = h('div', { class: 'chat-overlay', hidden: true }, this.stage, this.panel);
-  private preview: { dispose(): void } | null = null;
+  private preview: { wave(): void; nod(): void; dispose(): void } | null = null;
   private view: View = { kind: 'list', tab: 'chats' };
   private search = '';
   private draft = new Map<string, string>();
@@ -83,7 +83,7 @@ class ChatUi {
 
   private renderStage(): void {
     this.preview?.dispose();
-    const pv = characterPreview(prefs.look, 'stage');
+    const pv = characterPreview(prefs.look, 'stage', true);
     this.preview = pv;
     const room = social.room;
     const online = social.available ? [...social.people.keys()].filter((u) => u !== social.uid && social.isOnline(u)).length : 0;
@@ -115,7 +115,12 @@ class ChatUi {
   }
 
   private incoming(m: Message): void {
-    if (m.from === social.uid) return;
+    if (m.from === social.uid) {
+      this.preview?.nod();
+      return;
+    }
+    // Your character waves hello whenever someone writes.
+    this.preview?.wave();
     const viewing = !this.overlay.hidden && this.view.kind === 'conv' && this.view.id === m.conv;
     if (viewing) {
       social.markRead(m.conv);

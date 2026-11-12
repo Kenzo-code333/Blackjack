@@ -54,15 +54,15 @@ function marquee(small = false): HTMLElement {
 }
 
 /** A 3D turntable of your character, loaded on demand (nothing without WebGL). */
-export function characterPreview(look: Look, cls = ''): { el: HTMLElement; setLook(l: Look): void; dispose(): void } {
+export function characterPreview(look: Look, cls = '', wide = false): { el: HTMLElement; setLook(l: Look): void; wave(): void; nod(): void; dispose(): void } {
   const el = h('div', { class: `char-preview ${cls}`, 'aria-hidden': 'true' });
-  let preview: { setLook(l: Look): void; dispose(): void } | null = null;
+  let preview: { setLook(l: Look): void; wave(): void; nod(): void; dispose(): void } | null = null;
   let current = look;
   let disposed = false;
   void import('./three/character-preview.js')
     .then(({ CharacterPreview }) => {
       if (disposed) return;
-      preview = new CharacterPreview(el);
+      preview = new CharacterPreview(el, wide);
       preview.setLook(current);
     })
     .catch(() => el.classList.add('no-3d'));
@@ -71,6 +71,12 @@ export function characterPreview(look: Look, cls = ''): { el: HTMLElement; setLo
     setLook(l) {
       current = l;
       preview?.setLook(l);
+    },
+    wave() {
+      preview?.wave();
+    },
+    nod() {
+      preview?.nod();
     },
     dispose() {
       disposed = true;
