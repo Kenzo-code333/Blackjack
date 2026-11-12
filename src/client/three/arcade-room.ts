@@ -129,6 +129,17 @@ function cabinetArt(game: 'orbit-hop' | 'polyrush'): { screen: THREE.CanvasTextu
   return { screen, marquee };
 }
 
+function sweepTexture(): THREE.CanvasTexture {
+  return canvasTex(64, 8, (ctx) => {
+    const g = ctx.createLinearGradient(0, 0, 64, 0);
+    g.addColorStop(0, 'rgba(255,255,255,0)');
+    g.addColorStop(0.5, 'rgba(255,255,255,1)');
+    g.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, 64, 8);
+  });
+}
+
 function giantScreenArt(): THREE.CanvasTexture {
   return canvasTex(1600, 800, (ctx) => {
     const g = ctx.createLinearGradient(0, 0, 1600, 800);
@@ -281,8 +292,7 @@ export function buildCabinets(ctx: WorldCtx, station: Station): void {
     const p = g.position;
     ctx.collide(p.x, p.z, 0.6);
   }
-  ctx.blink(screenMat, 0.8);
-  ctx.blink(trim, 2.2);
+  ctx.blink(trim, 1.2);
   const pick = new THREE.Mesh(new THREE.BoxGeometry(3.4, 2.2, 1), new THREE.MeshBasicMaterial({ visible: false }));
   pick.position.copy(station.pos).setY(1.1);
   pick.rotation.y = station.yaw;
@@ -298,20 +308,33 @@ export function buildCabinets(ctx: WorldCtx, station: Station): void {
 export function buildGiantScreen(ctx: WorldCtx, station: Station): void {
   const { z: Z } = ARCADE_SIZE;
   const screenMat = new THREE.MeshBasicMaterial({ map: giantScreenArt(), toneMapped: false });
-  const screen = new THREE.Mesh(new THREE.PlaneGeometry(9, 4.5), screenMat);
-  screen.position.set(0, 2.6, -Z + 0.15);
+  // The picture sits clearly in front of its frame (never on the same plane, which made
+  // the two flicker as they fought over which one is drawn).
   const bezel = new THREE.Mesh(new THREE.BoxGeometry(9.4, 4.9, 0.2), new THREE.MeshStandardMaterial({ color: 0x0a0a14, roughness: 0.4, metalness: 0.4 }));
-  bezel.position.set(0, 2.6, -Z + 0.05);
-  const halo = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTexture(), color: 0x6b8cff, transparent: true, opacity: 0.35, blending: THREE.AdditiveBlending, depthWrite: false }));
-  halo.scale.set(14, 8, 1);
-  halo.position.set(0, 2.6, -Z + 0.4);
+  bezel.position.set(0, 2.6, -Z + 0.1);
+  const screen = new THREE.Mesh(new THREE.PlaneGeometry(9, 4.5), screenMat);
+  screen.position.set(0, 2.6, -Z + 0.24);
+  // A soft glow on the wall around the screen (behind it, never in front of the picture).
+  const halo = new THREE.Mesh(new THREE.PlaneGeometry(13, 7.5), new THREE.MeshBasicMaterial({ map: glowTexture(), color: 0x6b8cff, transparent: true, opacity: 0.4, blending: THREE.AdditiveBlending, depthWrite: false }));
+  halo.position.set(0, 2.6, -Z + 0.03);
+  // A slow band of light sweeping across the screen, like a big display catching the room.
+  const shine = new THREE.Mesh(
+    new THREE.PlaneGeometry(1.6, 4.5),
+    new THREE.MeshBasicMaterial({ map: sweepTexture(), transparent: true, opacity: 0.18, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false }),
+  );
+  shine.position.set(0, 2.6, -Z + 0.26);
+  shine.renderOrder = 2;
+  ctx.animate((_, t) => {
+    const k = (t * 0.12) % 1.6;
+    shine.position.x = -5.5 + k * 7;
+    shine.visible = k < 1.6 && Math.abs(shine.position.x) < 4.2;
+  });
   // A low stage in front of it.
   const stage = new THREE.Mesh(new THREE.BoxGeometry(10, 0.2, 2.2), new THREE.MeshStandardMaterial({ color: 0x14102a, roughness: 0.5 }));
   stage.position.set(0, 0.1, -Z + 1.2);
   const edge = new THREE.Mesh(new THREE.BoxGeometry(10, 0.04, 0.04), new THREE.MeshBasicMaterial({ color: NEON.gold, toneMapped: false }));
   edge.position.set(0, 0.2, -Z + 2.3);
-  ctx.add(bezel, screen, halo, stage, edge);
-  ctx.blink(screenMat, 0.35);
+  ctx.add(halo, bezel, screen, shine, stage, edge);
   for (let x = -4.8; x <= 4.8; x += 1.2) ctx.collide(x, -Z + 1.2, 0.7);
   // Benches with people watching.
   const benchMat = new THREE.MeshStandardMaterial({ color: 0x1d2a66, roughness: 0.6 });

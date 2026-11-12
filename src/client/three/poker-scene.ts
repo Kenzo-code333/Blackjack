@@ -5,6 +5,7 @@
 // scene snaps to the exact state, so it can never show something the server didn't say.
 
 import * as THREE from 'three';
+import { AdaptiveResolution } from './adaptive.js';
 import { addEnvironmentLight, warmUp } from './env-light.js';
 import type { AnyEvent, AnyState, PokerEvent, PokerState, TableEvent } from '../../shared/protocol.js';
 import type { Sound } from '../audio.js';
@@ -94,6 +95,8 @@ export class PokerScene3D implements TableRenderer {
   private state: PokerState | null = null;
   private low: boolean;
   private disposed = false;
+  /** Lowers or raises the rendering resolution to keep the frame rate smooth. */
+  private adaptive!: AdaptiveResolution;
   /** Resolves when the shaders are compiled and the first frame is on its way. */
   readonly ready: Promise<void>;
   private frame = 0;
@@ -122,6 +125,14 @@ export class PokerScene3D implements TableRenderer {
     this.low = opts.low;
     setChipDetail(this.low);
     this.renderer = new THREE.WebGLRenderer({ antialias: !this.low, powerPreference: 'high-performance' });
+    this.adaptive = new AdaptiveResolution(
+      this.renderer,
+      () => (this.low ? Math.min(window.devicePixelRatio, 1) : Math.min(window.devicePixelRatio, 1.75)),
+      () => {
+        this.setLowGraphics(true);
+        this.opts.onAutoLow?.();
+      },
+    );
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 0.95;
@@ -605,19 +616,7 @@ export class PokerScene3D implements TableRenderer {
     this.camera.rotateX(-this.pitch);
     this.renderer.render(this.scene, this.camera);
 
-    if (!this.low && !document.hidden) {
-      this.fpsFrames++;
-      this.fpsTime += dt;
-      if (this.fpsTime > 3) {
-        this.slow = this.fpsFrames / this.fpsTime < 28 ? this.slow + 1 : 0;
-        this.fpsFrames = this.fpsTime = 0;
-        if (this.slow >= 2) {
-          this.slow = 0;
-          this.setLowGraphics(true);
-          this.opts.onAutoLow?.();
-        }
-      }
-    }
+    this.adaptive.frame(dt * 1000, now);
   };
 
   private resize(): void {
@@ -631,7 +630,7 @@ export class PokerScene3D implements TableRenderer {
 
   private applyQuality(): void {
     const low = this.low;
-    this.renderer.setPixelRatio(low ? Math.min(window.devicePixelRatio, 1) : Math.min(window.devicePixelRatio, 2));
+    this.adaptive.apply();
     this.renderer.shadowMap.enabled = !low;
     this.lamp.castShadow = !low;
     for (const o of this.extras) o.visible = !low;

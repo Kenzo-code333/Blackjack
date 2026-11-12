@@ -3781,3 +3781,13 @@ h1 {
     height: 52px;
   }
 }
+
+/* Screens fade in softly instead of popping. */
+#app > * {
+  animation: screen-in 0.32s ease-out;
+}
+@keyframes screen-in {
+  from {
+    opacity: 0;
+  }
+}

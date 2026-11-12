@@ -7,6 +7,7 @@
 // On touch screens: a stick on the left to walk, drag on the right to look, tap a table.
 
 import * as THREE from 'three';
+import { AdaptiveResolution } from './adaptive.js';
 import { LOOK_OPTIONS, type Look, randomLook } from '../../shared/protocol.js';
 import { Avatar } from './avatar.js';
 import { Walker } from './walker.js';
@@ -98,9 +99,13 @@ export class CasinoFloor3D {
   private pitch = -0.08;
   private walkTo: { point: THREE.Vector3; face: THREE.Vector3; pitch: number } | null = null;
   private stick = { x: 0, y: 0 };
+  /** Walking velocity (eased). */
+  private readonly vel = new THREE.Vector3();
   private near: Station | null = null;
   private low: boolean;
   private disposed = false;
+  /** Lowers or raises the rendering resolution to keep the frame rate smooth. */
+  private adaptive!: AdaptiveResolution;
   /** Where builders put things: the scene, or a holder that is prepared before it joins the scene. */
   private target: THREE.Object3D = this.scene;
   private paused = false;
@@ -129,6 +134,14 @@ export class CasinoFloor3D {
     this.yaw = cfg.spawn.yaw;
     if (this.room !== 'lounge') this.takenSeats.clear();
     this.renderer = new THREE.WebGLRenderer({ antialias: !this.low, powerPreference: 'high-performance' });
+    this.adaptive = new AdaptiveResolution(
+      this.renderer,
+      () => (this.low ? Math.min(window.devicePixelRatio, 1) : Math.min(window.devicePixelRatio, 1.5)),
+      () => {
+        this.setLowGraphics(true);
+        this.opts.onAutoLow?.();
+      },
+    );
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.05;
@@ -904,19 +917,24 @@ export class CasinoFloor3D {
         const step = Math.min(dist, SPEED * dt * Math.min(1, dist * 1.5 + 0.3));
         this.pos.addScaledVector(to.normalize(), step);
         fwd = side = 0;
+        this.vel.set(0, 0, 0);
         this.bob += step * 6;
       }
     }
+    // Walking eases in and out (a quick ramp up and a soft stop) instead of jerking.
+    const want = new THREE.Vector3();
     const len = Math.hypot(fwd, side);
     if (len > 0.01) {
       const f = Math.min(1, len);
-      fwd /= len;
-      side /= len;
       const forward = new THREE.Vector3(-Math.sin(this.yaw), 0, -Math.cos(this.yaw));
       const right = new THREE.Vector3(Math.cos(this.yaw), 0, -Math.sin(this.yaw));
-      const step = SPEED * f * dt;
-      this.pos.addScaledVector(forward, fwd * step).addScaledVector(right, side * step);
-      this.bob += step * 6;
+      want.addScaledVector(forward, (fwd / len) * SPEED * f).addScaledVector(right, (side / len) * SPEED * f);
+    }
+    const ease = 1 - Math.exp(-(len > 0.01 ? 9 : 12) * dt);
+    this.vel.lerp(want, ease);
+    if (this.vel.lengthSq() > 1e-5) {
+      this.pos.addScaledVector(this.vel, dt);
+      this.bob += this.vel.length() * dt * 6;
     }
     // Stay inside the room and out of the furniture.
     this.pos.x = THREE.MathUtils.clamp(this.pos.x, -this.size.x + 0.5, this.size.x - 0.5);
@@ -961,8 +979,11 @@ export class CasinoFloor3D {
       w.ball.position.set(Math.sin(a) * 0.384, 0.083, Math.cos(a) * 0.384);
     }
     for (const b of this.blinkers) {
-      const v = 0.75 + 0.25 * Math.sin(this.clock * b.speed + b.phase);
-      (b.mat as THREE.MeshBasicMaterial).color.setScalar(v);
+      // Brighten and soften the material's own colour (neon stays its colour).
+      const v = 0.78 + 0.22 * Math.sin(this.clock * b.speed + b.phase);
+      const m = b.mat as THREE.MeshBasicMaterial;
+      m.userData.base ??= m.color.clone();
+      m.color.copy(m.userData.base as THREE.Color).multiplyScalar(v);
     }
     // Which table are we next to?
     let near: Station | null = null;
@@ -997,19 +1018,7 @@ export class CasinoFloor3D {
     this.camera.rotation.set(this.pitch, this.yaw, 0, 'YXZ');
     this.renderer.render(this.scene, this.camera);
 
-    if (!this.low && !document.hidden) {
-      this.fpsFrames++;
-      this.fpsTime += dt;
-      if (this.fpsTime > 3) {
-        this.slow = this.fpsFrames / this.fpsTime < 26 ? this.slow + 1 : 0;
-        this.fpsFrames = this.fpsTime = 0;
-        if (this.slow >= 2) {
-          this.slow = 0;
-          this.setLowGraphics(true);
-          this.opts.onAutoLow?.();
-        }
-      }
-    }
+    this.adaptive.frame(dt * 1000, now);
   };
 
   private resize(): void {
@@ -1023,7 +1032,7 @@ export class CasinoFloor3D {
 
   private applyQuality(): void {
     const low = this.low;
-    this.renderer.setPixelRatio(low ? Math.min(window.devicePixelRatio, 1) : Math.min(window.devicePixelRatio, 1.5));
+    this.adaptive.apply();
 
     for (const o of this.extras) o.visible = !low;
     this.resize();

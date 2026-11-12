@@ -7,6 +7,7 @@
 // the middle of a round just works).
 
 import * as THREE from 'three';
+import { AdaptiveResolution } from './adaptive.js';
 import { addEnvironmentLight, warmUp } from './env-light.js';
 import type { AnyEvent, AnyState, PokerEvent, PublicPlayer, PublicState, TableEvent } from '../../shared/protocol.js';
 import type { Sound } from '../audio.js';
@@ -99,6 +100,8 @@ export class Table3D implements TableRenderer {
   private frame = 0;
   private lastTime = performance.now();
   private disposed = false;
+  /** Lowers or raises the rendering resolution to keep the frame rate smooth. */
+  private adaptive!: AdaptiveResolution;
   /** Resolves when the shaders are compiled and the first frame is on its way. */
   readonly ready: Promise<void>;
   private low: boolean;
@@ -135,6 +138,14 @@ export class Table3D implements TableRenderer {
     this.low = opts.low;
     setChipDetail(this.low);
     this.renderer = new THREE.WebGLRenderer({ antialias: !this.low, powerPreference: 'high-performance' });
+    this.adaptive = new AdaptiveResolution(
+      this.renderer,
+      () => (this.low ? Math.min(window.devicePixelRatio, 1) : Math.min(window.devicePixelRatio, 1.75)),
+      () => {
+        this.setLowGraphics(true);
+        this.opts.onAutoLow?.();
+      },
+    );
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 0.95;
@@ -997,7 +1008,7 @@ export class Table3D implements TableRenderer {
 
   private applyQuality(): void {
     const low = this.low;
-    this.renderer.setPixelRatio(low ? Math.min(window.devicePixelRatio, 1) : Math.min(window.devicePixelRatio, 2));
+    this.adaptive.apply();
     this.renderer.shadowMap.enabled = !low;
     this.env.lamp.castShadow = !low;
     this.env.lamp.shadow.mapSize.set(low ? 512 : 2048, low ? 512 : 2048);
@@ -1013,19 +1024,8 @@ export class Table3D implements TableRenderer {
   }
 
   private watchFps(dt: number): void {
-    if (this.low || document.hidden) return;
-    this.fpsFrames++;
-    this.fpsTime += dt;
-    if (this.fpsTime < 3) return;
-    const fps = this.fpsFrames / this.fpsTime;
-    this.fpsFrames = 0;
-    this.fpsTime = 0;
-    this.slowWindows = fps < 28 ? this.slowWindows + 1 : 0;
-    if (this.slowWindows >= 2) {
-      this.slowWindows = 0;
-      this.setLowGraphics(true);
-      this.opts.onAutoLow?.();
-    }
+    this.adaptive.frame(dt * 1000, performance.now());
   }
+
 }
 
