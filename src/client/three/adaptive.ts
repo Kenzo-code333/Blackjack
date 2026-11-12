@@ -4,7 +4,7 @@
 // the lowest resolution can't keep up does `onStruggling` fire (the scene then switches to
 // low graphics).
 
-import type * as THREE from 'three';
+import * as THREE from 'three';
 
 export class AdaptiveResolution {
   private scale = 1;
@@ -52,7 +52,7 @@ export class AdaptiveResolution {
   apply(): void {
     const ratio = Math.max(0.5, this.maxRatio() * this.scale);
     if (Math.abs(this.renderer.getPixelRatio() - ratio) > 0.01) {
-      const size = this.renderer.getSize({ x: 0, y: 0 } as THREE.Vector2);
+      const size = this.renderer.getSize(new THREE.Vector2());
       this.renderer.setPixelRatio(ratio);
       this.renderer.setSize(size.x, size.y, false);
     }

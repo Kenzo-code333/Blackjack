@@ -542,7 +542,7 @@ export function lobbyScreen(a: LobbyActions): { el: HTMLElement; dispose(): void
     { class: 'casino-screen lobby' },
     h('header', { class: 'lobby-top' }, marquee(true), profile),
     h('h1', { class: 'screen-title center' }, 'Choose your table'),
-    h('div', { class: 'center lobby-actions' }, a.floorView ? h('button', { class: 'btn gold', onclick: a.floorView }, '🚶 Walk the casino floor in 3D') : null, a.challenge ? h('button', { class: 'btn small challenge-btn', onclick: a.challenge }, '🏆 Challenge your friends') : null),
+    h('div', { class: 'center lobby-actions' }, a.floorView ? h('button', { class: 'btn gold', onclick: a.floorView }, '🚶 Back to walking around in 3D') : null, a.challenge ? h('button', { class: 'btn small challenge-btn', onclick: a.challenge }, '🏆 Challenge your friends') : null),
     h('div', { class: 'game-cards' }, blackjack, roulette, poker, slots),
     arcade,
     friends,

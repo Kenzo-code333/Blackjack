@@ -13,7 +13,7 @@ import { ARCADE_SAVE_PREFIXES } from './arcade/catalog.js';
 import { store } from './storage.js';
 
 /** Everything that makes up your profile. */
-const PROFILE_KEYS = ['bj:name', 'bj:look', 'bj:chips', 'bj:vault', 'bj:best', 'bj:stats', 'bj:music', 'bj:sfx', 'bj:voice', 'bj:muted', 'bj:low', 'bj:challenge', 'bj:uid', 'bj:keys', 'bj:friends', 'bj:chats', 'bj:groups'];
+const PROFILE_KEYS = ['bj:name', 'bj:look', 'bj:chips', 'bj:vault', 'bj:best', 'bj:stats', 'bj:music', 'bj:sfx', 'bj:voice', 'bj:muted', 'bj:gfx', 'bj:challenge', 'bj:uid', 'bj:keys', 'bj:friends', 'bj:chats', 'bj:groups'];
 /** Saves of the arcade games (best scores, tracks, settings…) are part of your profile too. */
 const PROFILE_PREFIXES = ARCADE_SAVE_PREFIXES;
 

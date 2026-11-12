@@ -338,8 +338,10 @@ export function floorScreen(a: FloorScreenOptions): { el: HTMLElement; dispose()
   // Touch stick.
   const knob = h('div', { class: 'knob' });
   const stick = h('div', { class: 'stick', hidden: true }, knob);
+  // On touch screens: a faint ring showing where your thumb walks (put it anywhere on the left).
+  const stickGuide = h('div', { class: 'stick-guide', hidden: !matchMedia('(pointer: coarse)').matches, 'aria-hidden': 'true' }, h('span', {}, 'walk'));
 
-  const el = h('main', { class: `floor-screen room-${a.room}` }, stage, loading, top, joinBox, hint, goButtons, card, stick, standBtn);
+  const el = h('main', { class: `floor-screen room-${a.room}` }, stage, loading, top, joinBox, hint, goButtons, card, stickGuide, stick, standBtn);
 
   let disposed = false;
   void (async () => {
@@ -368,6 +370,7 @@ export function floorScreen(a: FloorScreenOptions): { el: HTMLElement; dispose()
       });
       floor.onStick = (active, x, y, dx, dy) => {
         stick.hidden = !active;
+        stickGuide.classList.toggle('used', active);
         if (!active) return;
         stick.style.left = `${x}px`;
         stick.style.top = `${y}px`;
@@ -384,7 +387,10 @@ export function floorScreen(a: FloorScreenOptions): { el: HTMLElement; dispose()
       setTimeout(() => hint.classList.add('fade'), 9000);
     } catch (err) {
       console.warn('3D floor unavailable', err);
-      if (!disposed) a.listView();
+      if (!disposed) {
+        toast('Your device couldn’t show the 3D rooms right now, so here’s the list of games. The 3D rooms will be tried again next time.', 'error');
+        a.listView();
+      }
     }
   })();
 

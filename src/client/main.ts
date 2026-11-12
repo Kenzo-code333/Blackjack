@@ -47,13 +47,18 @@ window.addEventListener('pointerdown', () => sound.unlock(), { capture: true });
 window.addEventListener('keydown', () => sound.unlock(), { capture: true });
 
 /** Phones and small/older machines start in low graphics unless the player chose otherwise. */
+/**
+ * Full graphics unless you chose low with the graphics button. Each 3D view adjusts its
+ * resolution to stay smooth; if a device still can't keep up it switches to low graphics
+ * for the rest of this visit only (never remembered).
+ */
+let lowThisVisit = false;
 function defaultLowGraphics(): boolean {
-  const saved = prefs.lowGraphics;
-  if (saved !== null) return saved;
-  const touch = matchMedia('(pointer: coarse)').matches;
-  const cores = navigator.hardwareConcurrency || 4;
-  return touch || cores <= 4;
+  return prefs.lowGraphics ?? lowThisVisit;
 }
+
+/** The simple list of games instead of the 3D rooms: only for the current visit. */
+let listThisVisit = false;
 
 let teardown: (() => void) | null = null;
 
@@ -191,7 +196,7 @@ function openInvitedChallenge(): void {
 
 function showProfile(): void {
   document.title = `${CASINO_NAME} · Blackjack, Roulette & Poker`;
-  const screen = profileScreen(() => go('/lounge'), {
+  const screen = profileScreen(() => ((listThisVisit = false), go('/lounge')), {
     email: account.email,
     where: account.where,
     signIn: () => go('/login'),
@@ -319,12 +324,11 @@ function showLobby(room: Room = 'casino'): void {
     play: (name, opts) => sound.play(name, opts),
     challenge: () => challenge.open(),
   };
-  const listView = store.local.get('bj:lobby') === 'list';
-  if (listView) {
+  if (listThisVisit) {
     const screen = lobbyScreen({
       ...actions,
       floorView: () => {
-        store.local.set('bj:lobby', 'floor');
+        listThisVisit = false;
         showLobby(room);
       },
     });
@@ -339,11 +343,11 @@ function showLobby(room: Room = 'casino'): void {
     onWorld: (w) => social.attachWorld(w, room),
     low: defaultLowGraphics(),
     listView: () => {
-      store.local.set('bj:lobby', 'list');
+      listThisVisit = true;
       showLobby(room);
     },
     onAutoLow: () => {
-      prefs.lowGraphics = true;
+      lowThisVisit = true;
       toast('Switched to low graphics for smoother play');
     },
   });
@@ -502,6 +506,7 @@ function showTableFor(code: string, game: GameKind): void {
           low,
           onAutoLow: () => {
             low = true;
+            lowThisVisit = true;
             hud.setLowGraphics(true);
             toast('Switched to low graphics for smoother play');
           },
@@ -515,6 +520,7 @@ function showTableFor(code: string, game: GameKind): void {
           onSpot: (spot) => hud.roulette?.bet(spot),
           onAutoLow: () => {
             low = true;
+            lowThisVisit = true;
             hud.setLowGraphics(true);
             toast('Switched to low graphics for smoother play');
           },
@@ -526,6 +532,7 @@ function showTableFor(code: string, game: GameKind): void {
         onMoment: (kind, mine, name) => hud.celebrate(kind, mine, name),
         onAutoLow: () => {
           low = true;
+          lowThisVisit = true;
           hud.setLowGraphics(true);
           toast('Switched to low graphics for smoother play');
         },

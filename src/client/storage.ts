@@ -111,13 +111,13 @@ export const prefs = {
   set bestCashOut(v: number) {
     store.local.set('bj:best', String(cleanChips(v)));
   },
-  /** null = not chosen yet (auto-detect). */
+  /** Your own choice from the graphics button; null = not chosen (full graphics, adjusted automatically). */
   get lowGraphics(): boolean | null {
-    const v = store.local.get('bj:low');
-    return v === null ? null : v === '1';
+    const v = store.local.get('bj:gfx');
+    return v === null ? null : v === 'low';
   },
   set lowGraphics(v: boolean) {
-    store.local.set('bj:low', v ? '1' : '0');
+    store.local.set('bj:gfx', v ? 'low' : 'high');
   },
 };
 
@@ -131,3 +131,8 @@ export function canRefill(pocket: number = prefs.chips): boolean {
 export function inChallenge(): boolean {
   return store.local.get('bj:challenge') !== null;
 }
+
+// Older versions remembered an automatic switch to low graphics, and the simple list view,
+// forever; both kept people out of the smooth 3D rooms. Forget them once.
+store.local.remove('bj:low');
+store.local.remove('bj:lobby');
