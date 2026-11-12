@@ -5,6 +5,7 @@
 import type { OnlineApi, OpenTable } from '../online-api.js';
 import { PageServer } from '../preview/page-server.js';
 import { relayChallenges } from './challenge-relay.js';
+import { relayBus } from './bus-relay.js';
 import { LocalSocket, RemoteSocket, SwitchSocket } from '../preview/sockets.js';
 import { BROKERS, RelayHost, RelayLink, type RelayTable, cloudGet, cloudPut, findRelayTable } from './relay.js';
 
@@ -27,6 +28,7 @@ const api: OnlineApi = {
   onlineAvailable: async () => typeof WebSocket !== 'undefined',
   listsTables: false,
   challenges: relayChallenges,
+  bus: relayBus,
   cloud: { get: (id) => cloudGet(id), put: (id, payload) => cloudPut(id, payload) },
   watchTables: async () => () => {},
   host: async (code, hostName) => {

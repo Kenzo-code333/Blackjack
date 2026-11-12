@@ -17,6 +17,8 @@ export interface OnlineApi {
   /** Where accounts can be saved online (file and website builds), if anywhere. */
   /** Challenges through the public relays (file and website builds). */
   readonly challenges?: import('./challenge-api.js').ChallengeBackend;
+  /** The social message board through the public relays (file and website builds). */
+  readonly bus?: () => import('./social/bus.js').Bus;
   readonly cloud?: { get(id: string): Promise<string[]>; put(id: string, payload: string): Promise<number> };
   watchTables(fn: (tables: OpenTable[]) => void): Promise<() => void>;
   /** Open the table just created on this page to friends. */

@@ -14,6 +14,10 @@ import type { PreviewApi } from './preview/install.js';
 import type { AnyState, GameKind } from '../shared/protocol.js';
 import type { TableRenderer } from './renderer.js';
 import { floorScreen, lastStation } from './floor-screen.js';
+import { social } from './social/social.js';
+import { chatUi } from './social/chat-ui.js';
+import { serverBus } from './social/bus.js';
+import type { Room } from './three/world-types.js';
 import { account } from './account.js';
 import { challenge } from './challenge.js';
 import { serverChallenges } from './challenge-api.js';
@@ -57,6 +61,8 @@ function mount(el: HTMLElement, dispose?: () => void): void {
   teardown?.();
   teardown = dispose ?? null;
   app.replaceChildren(el);
+  // The chats button: on the rooms and the home page, not at the game tables or sign-in.
+  chatUi.setVisible(!el.classList.contains('table-view') && !el.classList.contains('login-screen'));
   window.scrollTo(0, 0);
 }
 
@@ -142,7 +148,7 @@ function route(): void {
     const rules = currentPath.match(/^\/rules\/(blackjack|poker|roulette)$/)?.[1] as GameKind | undefined;
     if (rules) showRules(rules);
     else if (currentPath === '/login' || (!account.email && !account.guest)) showLogin();
-    else if (currentPath === '/lobby' && prefs.name) showLobby();
+    else if (ROOM_PATH.test(currentPath) && prefs.name) showLobby(roomOfPath(currentPath));
     else showProfile();
     return;
   }
@@ -185,11 +191,11 @@ function openInvitedChallenge(): void {
 
 function showProfile(): void {
   document.title = `${CASINO_NAME} · Blackjack, Roulette & Poker`;
-  const screen = profileScreen(() => go('/lobby'), {
+  const screen = profileScreen(() => go('/lounge'), {
     email: account.email,
     where: account.where,
     signIn: () => go('/login'),
-    signOut: () => void account.logOut().then(() => go('/login')),
+    signOut: () => void account.logOut().then(() => (void social.restart(), go('/login'))),
   });
   mount(screen.el, screen.dispose);
   // Download the 3D casino floor while you pick your look, so "Enter the casino" is quick.
@@ -208,6 +214,7 @@ function showLogin(): void {
       signIn: async (email, password) => {
         const res = await account.logIn(email, password);
         if (res.ok) {
+          void social.restart();
           toast(`Welcome back${prefs.name ? `, ${prefs.name}` : ''}!`);
           done();
         }
@@ -216,6 +223,7 @@ function showLogin(): void {
       signUp: async (email, password) => {
         const res = await account.signUp(email, password);
         if (res.ok) {
+          void social.restart();
           toast('Account created: your progress is saved');
           done();
         }
@@ -223,13 +231,31 @@ function showLogin(): void {
       },
       guest: () => {
         account.playAsGuest();
+        void social.restart();
         done();
       },
     }),
   );
 }
 
-function showLobby(): void {
+/** The rooms: /lounge (where you arrive), /casino (also the old /lobby), /arcade. */
+const ROOM_PATH = /^\/(lounge|casino|arcade|lobby)$/;
+const roomOfPath = (p: string): Room => (p === '/lounge' ? 'lounge' : p === '/arcade' ? 'arcade' : 'casino');
+let currentRoom: Room | null = null;
+let cameFrom: Room | null = null;
+
+function goRoom(room: Room): void {
+  cameFrom = currentRoom;
+  go(`/${room}`);
+}
+
+function showLobby(room: Room = 'casino'): void {
+  // Your name or look may have changed on the home page: tell the others.
+  if (!social.uid) void social.restart();
+  else social.announce();
+  const from = cameFrom;
+  cameFrom = null;
+  currentRoom = room;
   openInvitedChallenge();
   document.title = `${CASINO_NAME} · Casino floor`;
   const name = () => prefs.name || 'Player';
@@ -299,7 +325,7 @@ function showLobby(): void {
       ...actions,
       floorView: () => {
         store.local.set('bj:lobby', 'floor');
-        showLobby();
+        showLobby(room);
       },
     });
     mount(screen.el, screen.dispose);
@@ -307,10 +333,14 @@ function showLobby(): void {
   }
   const screen = floorScreen({
     ...actions,
+    room,
+    from,
+    goRoom,
+    onWorld: (w) => social.attachWorld(w, room),
     low: defaultLowGraphics(),
     listView: () => {
       store.local.set('bj:lobby', 'list');
-      showLobby();
+      showLobby(room);
     },
     onAutoLow: () => {
       prefs.lowGraphics = true;
@@ -434,7 +464,8 @@ function showTableFor(code: string, game: GameKind): void {
     },
     onLeave: () => {
       lastStation.returning();
-      go('/lobby');
+      cameFrom = null;
+      go('/casino');
     },
     onToggleGraphics: () => {
       low = !low;
@@ -569,5 +600,9 @@ challenge.init({
   atTable: () => net.session !== null,
 });
 
-// Sign back in (if you were) before showing anything.
-void account.init({ server: !PREVIEW, cloud: preview?.cloud ?? null }).finally(() => route());
+// Sign back in (if you were) before showing anything; then connect the chats.
+void account.init({ server: !PREVIEW, cloud: preview?.cloud ?? null }).finally(() => {
+  route();
+  chatUi.mount();
+  void social.init(!PREVIEW ? serverBus() : (preview?.bus?.() ?? null));
+});

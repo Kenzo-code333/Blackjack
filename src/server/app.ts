@@ -9,6 +9,7 @@ import { Server, type Socket } from 'socket.io';
 import type { Action } from '../game/index.js';
 import { type Ack, type ClientToServer, type JoinResult, type PokerAction, type ServerToClient, cleanChips, cleanLook } from '../shared/protocol.js';
 import { AccountStore } from './accounts.js';
+import { Bus } from './bus.js';
 import { ChallengeStore } from './competitions.js';
 import { PokerTable } from './poker-table.js';
 import { RouletteTable } from './roulette-table.js';
@@ -27,7 +28,7 @@ export interface GameServer {
   close(): Promise<void>;
 }
 
-export function createGameServer(settings: Partial<RoomSettings> = {}, accounts = new AccountStore(), challenges = new ChallengeStore()): GameServer {
+export function createGameServer(settings: Partial<RoomSettings> = {}, accounts = new AccountStore(), challenges = new ChallengeStore(), bus = new Bus()): GameServer {
   const app = express();
   app.disable('x-powered-by');
   const http = createServer(app);
@@ -46,7 +47,7 @@ export function createGameServer(settings: Partial<RoomSettings> = {}, accounts 
   });
 
   // ---------- Accounts: sign up / sign in with an email, save your progress ----------
-  const json = express.json({ limit: '32kb' });
+  const json = express.json({ limit: '512kb' });
   const attempts = new Map<string, RateLimiter>();
   const limited = (ip: string | undefined) => {
     const key = ip ?? '?';
@@ -311,7 +312,20 @@ export function createGameServer(settings: Partial<RoomSettings> = {}, accounts 
       }),
     );
 
-    socket.on('disconnect', () => leaveCurrent());
+    // ---------- The social message board ----------
+    const busLimit = new RateLimiter(60, 5_000);
+    bus.connect(socket.id, (topic, payload) => socket.emit('bus:msg', { topic, payload }));
+    socket.on('bus:sub', (p) => void bus.subscribe(socket.id, p?.filter));
+    socket.on('bus:unsub', (p) => bus.unsubscribe(socket.id, p?.filter));
+    socket.on('bus:pub', (p) => {
+      if (!busLimit.allow()) return;
+      bus.publish(p?.topic, p?.payload, p?.retain === true);
+    });
+
+    socket.on('disconnect', () => {
+      bus.disconnect(socket.id);
+      leaveCurrent();
+    });
   });
 
   return {
@@ -323,6 +337,7 @@ export function createGameServer(settings: Partial<RoomSettings> = {}, accounts 
         rooms.closeAll();
         accounts.flush();
         challenges.flush();
+        bus.flush();
         void io.close(() => resolve());
       }),
   };

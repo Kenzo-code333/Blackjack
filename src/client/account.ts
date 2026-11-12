@@ -9,10 +9,27 @@
 // Your profile is the set of saved settings below. While you're signed in, any change to
 // them is saved to your account within a few seconds (and when you leave the page).
 
+import { ARCADE_SAVE_PREFIXES } from './arcade/catalog.js';
 import { store } from './storage.js';
 
 /** Everything that makes up your profile. */
-const PROFILE_KEYS = ['bj:name', 'bj:look', 'bj:chips', 'bj:vault', 'bj:best', 'bj:stats', 'bj:music', 'bj:sfx', 'bj:voice', 'bj:muted', 'bj:low', 'bj:challenge'];
+const PROFILE_KEYS = ['bj:name', 'bj:look', 'bj:chips', 'bj:vault', 'bj:best', 'bj:stats', 'bj:music', 'bj:sfx', 'bj:voice', 'bj:muted', 'bj:low', 'bj:challenge', 'bj:uid', 'bj:keys', 'bj:friends', 'bj:chats', 'bj:groups'];
+/** Saves of the arcade games (best scores, tracks, settings…) are part of your profile too. */
+const PROFILE_PREFIXES = ARCADE_SAVE_PREFIXES;
+
+/** Every saved name in this browser that belongs to your profile. */
+function profileKeys(): string[] {
+  const keys = new Set(PROFILE_KEYS);
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && PROFILE_PREFIXES.some((p) => k.startsWith(p))) keys.add(k);
+    }
+  } catch {
+    /* storage unavailable */
+  }
+  return [...keys];
+}
 const SESSION_KEY = 'bj:account';
 const GUEST_KEY = 'bj:guest';
 
@@ -21,7 +38,7 @@ type Res<T = object> = ({ ok: true } & T) | { ok: false; error: string };
 
 export function snapshot(): Profile {
   const out: Profile = {};
-  for (const k of PROFILE_KEYS) {
+  for (const k of profileKeys()) {
     const v = store.local.get(k);
     if (v !== null) out[k] = v;
   }
@@ -29,10 +46,10 @@ export function snapshot(): Profile {
 }
 
 function apply(data: Record<string, unknown>): void {
-  for (const k of PROFILE_KEYS) {
-    const v = data[k];
-    if (typeof v === 'string') store.local.set(k, v);
-    else store.local.remove(k);
+  // Clear what belongs to the previous profile on this device, then load this one.
+  for (const k of profileKeys()) if (typeof data[k] !== 'string') store.local.remove(k);
+  for (const [k, v] of Object.entries(data)) {
+    if (typeof v === 'string' && (PROFILE_KEYS.includes(k) || PROFILE_PREFIXES.some((p) => k.startsWith(p)))) store.local.set(k, v);
   }
 }
 

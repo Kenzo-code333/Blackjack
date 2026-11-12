@@ -1,13 +1,15 @@
-// The casino floor you walk around before sitting down: carpet, columns, chandeliers,
-// rows of slot machines, and the game tables with their dealers and other guests.
-// Walk up to a table and its card opens; leave a table and you're back beside it.
+// The rooms you walk around: the Lounge (where you arrive: couches, people chatting), the
+// Casino (carpet, chandeliers, game tables with dealers, slot machines, the cashier) and the
+// Arcade (blue neon, free games). Walk up to something and its card opens; doorways take
+// you to the other rooms; on a couch you can sit down.
 //
 // Controls: WASD / arrow keys to walk, drag to look, click a table to walk to it.
 // On touch screens: a stick on the left to walk, drag on the right to look, tap a table.
 
 import * as THREE from 'three';
-import { LOOK_OPTIONS, type GameKind, type Look, randomLook } from '../../shared/protocol.js';
+import { LOOK_OPTIONS, type Look, randomLook } from '../../shared/protocol.js';
 import { Avatar } from './avatar.js';
+import { Walker } from './walker.js';
 import { Dealer } from './dealer.js';
 import { addEnvironmentLight, warmUp } from './env-light.js';
 import { mergeStatic, simplifyMaterials } from './bake.js';
@@ -16,26 +18,13 @@ import { TABLE_Y } from './layout.js';
 import { buildPokerTable } from './poker-scene.js';
 import { buildRouletteTable, buildWheel } from './roulette-scene.js';
 import { carpetTexture, glowTexture, setMaxAnisotropy, woodTexture } from './textures.js';
+import { ARCADE_SIZE, ARCADE_SPAWN, ARCADE_STATIONS, buildArcadeShell, buildCabinets, buildGiantScreen } from './arcade-room.js';
+import { blobShadow, canvasTex, makeSign } from './decor.js';
+import { LOUNGE_SIZE, LOUNGE_SPAWN, LOUNGE_STATIONS, botSeats, buildCorner, buildLoungeDecor, buildLoungeShell } from './lounge-room.js';
+import type { Room, Station, StationId, WorldCtx } from './world-types.js';
 import { Animator, damp } from './tween.js';
 
-export type StationId = 'blackjack-solo' | 'blackjack' | 'poker' | 'roulette' | 'cashier' | 'slots-left' | 'slots-right';
-
-export interface Station {
-  id: StationId;
-  /** null = not a table game: the cashier's cage or a row of slot machines (see `kind`). */
-  game: GameKind | null;
-  kind?: 'cashier' | 'slots';
-  /** For a row of machines: half its length, along the row. */
-  span?: number;
-  title: string;
-  sub: string;
-  /** Table center on the floor. */
-  pos: THREE.Vector3;
-  /** Which way the table faces (toward its players). */
-  yaw: number;
-  /** Collision radius. */
-  radius: number;
-}
+export type { Room, Station, StationId } from './world-types.js';
 
 const ROOM_X = 12;
 const ROOM = { x: ROOM_X, z: 12, h: 4.6 };
@@ -48,14 +37,32 @@ export const STATIONS: Station[] = [
   { id: 'cashier', game: null, kind: 'cashier', title: 'Cashier', sub: 'Cash out your chips', pos: new THREE.Vector3(7.5, 0, -11.4), yaw: 0, radius: 1.3 },
   { id: 'slots-left', game: null, kind: 'slots', title: 'Slot machines', sub: 'Line up three of a kind', pos: new THREE.Vector3(-ROOM_X + 0.55, 0, -5.85), yaw: Math.PI / 2, radius: 0.8, span: 3.3 },
   { id: 'slots-right', game: null, kind: 'slots', title: 'Slot machines', sub: 'Line up three of a kind', pos: new THREE.Vector3(ROOM_X - 0.55, 0, -5.45), yaw: -Math.PI / 2, radius: 0.8, span: 3.3 },
+  { id: 'door-lounge', game: null, kind: 'door', to: 'lounge', title: 'The Lounge', sub: 'Back to the couches', pos: new THREE.Vector3(0, 0, 11.6), yaw: Math.PI, radius: 0.8 },
 ];
+
+/** Each room: its size, where you arrive, what's in it. */
+const ROOMS: Record<Room, { size: { x: number; z: number; h: number }; spawn: { pos: THREE.Vector3; yaw: number }; stations: Station[]; bg: number; fog: [number, number] }> = {
+  casino: { size: ROOM, spawn: { pos: new THREE.Vector3(0, 0, 9.5), yaw: 0 }, stations: STATIONS, bg: 0x0b0706, fog: [9, 26] },
+  lounge: { size: LOUNGE_SIZE, spawn: LOUNGE_SPAWN, stations: LOUNGE_STATIONS, bg: 0x0d0805, fog: [10, 24] },
+  arcade: { size: ARCADE_SIZE, spawn: ARCADE_SPAWN, stations: ARCADE_STATIONS, bg: 0x03040f, fog: [10, 28] },
+};
+
+export function stationsOf(room: Room): Station[] {
+  return ROOMS[room].stations;
+}
 
 export interface FloorOptions {
   low: boolean;
+  /** Which room (default: the casino). */
+  room?: Room;
   /** Start beside this table (coming back from it), or at the entrance. */
   start?: StationId | null;
   /** Called when you walk up to a table, or away from it (null). */
   onNear: (station: Station | null) => void;
+  /** Sat down on a couch, or stood up (null). */
+  onSit?: (station: Station | null) => void;
+  /** Walked through a doorway. */
+  onDoor?: (to: Room) => void;
   onAutoLow?: () => void;
 }
 
@@ -79,6 +86,14 @@ export class CasinoFloor3D {
   private readonly raycaster = new THREE.Raycaster();
   private readonly keys = new Set<string>();
   private readonly pos = new THREE.Vector3(0, 0, 9.5);
+  readonly room: Room;
+  private readonly stations: Station[];
+  private readonly size: { x: number; z: number; h: number };
+  private readonly animations: ((dt: number, t: number) => void)[] = [];
+  /** Sitting on a couch: where, and which seat. */
+  private seat: { station: Station; index: number; pos: THREE.Vector3; yaw: number } | null = null;
+  /** Seats bots or other people are on ("couchId:index"). */
+  private readonly takenSeats = botSeats();
   private yaw = 0; // 0 = looking toward -z
   private pitch = -0.08;
   private walkTo: { point: THREE.Vector3; face: THREE.Vector3; pitch: number } | null = null;
@@ -105,6 +120,14 @@ export class CasinoFloor3D {
     private readonly opts: FloorOptions,
   ) {
     this.low = opts.low;
+    this.room = opts.room ?? 'casino';
+    const cfg = ROOMS[this.room];
+    this.stations = cfg.stations;
+    this.size = cfg.size;
+    // Arrive at a slightly different spot each time, so people don't stand inside each other.
+    this.pos.copy(cfg.spawn.pos).add(new THREE.Vector3((Math.random() - 0.5) * 2.4, 0, (Math.random() - 0.5) * 0.8));
+    this.yaw = cfg.spawn.yaw;
+    if (this.room !== 'lounge') this.takenSeats.clear();
     this.renderer = new THREE.WebGLRenderer({ antialias: !this.low, powerPreference: 'high-performance' });
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -114,20 +137,26 @@ export class CasinoFloor3D {
     this.renderer.shadowMap.enabled = false;
     setMaxAnisotropy(Math.min(8, this.renderer.capabilities.getMaxAnisotropy()));
     container.append(this.renderer.domElement);
-    this.scene.background = new THREE.Color(0x0b0706);
-    this.scene.fog = new THREE.Fog(0x0b0706, 9, 26);
+    this.scene.background = new THREE.Color(cfg.bg);
+    this.scene.fog = new THREE.Fog(cfg.bg, cfg.fog[0], cfg.fog[1]);
     addEnvironmentLight(this.renderer, this.scene, 0.25);
 
     // First just the room (quick to prepare), so the doors open right away. The tables,
     // machines and decorations arrive over the next moments, nearest first (see buildRest).
-    this.buildRoom();
+    if (this.room === 'casino') this.buildRoom();
+    else if (this.room === 'lounge') buildLoungeShell(this.ctx);
+    else buildArcadeShell(this.ctx);
     simplifyMaterials(this.scene);
     mergeStatic(this.scene);
 
     // Start at the entrance, or beside the table you just left.
-    const back = opts.start ? STATIONS.find((s) => s.id === opts.start) : undefined;
-    if (back) {
-      const front = this.approachPoint(back, back.kind === 'slots' ? 2.7 : back.game ? 2.4 : 3.3);
+    const back = opts.start ? this.stations.find((s) => s.id === opts.start) : undefined;
+    if (back?.kind === 'door') {
+      // Coming through a doorway: a few steps into the room, facing into it.
+      this.pos.copy(this.approachPoint(back, 3.4)).add(new THREE.Vector3((Math.random() - 0.5) * 1.2, 0, 0));
+      this.faceToward(this.pos.clone().addScaledVector(new THREE.Vector3(Math.sin(back.yaw), 0, Math.cos(back.yaw)), 5));
+    } else if (back) {
+      const front = this.approachPoint(back, this.approachDistance(back));
       this.pos.copy(front);
       this.faceToward(back.pos);
       if (!back.game) this.pitch = 0.04;
@@ -152,11 +181,23 @@ export class CasinoFloor3D {
    * the background) and only then joins the scene, so walking stays smooth.
    */
   private async buildRest(): Promise<void> {
-    const steps: { at: THREE.Vector3; build: () => void }[] = [
-      ...STATIONS.filter((st) => st.game).map((st) => ({ at: st.pos, build: () => this.buildStation(st) })),
-      { at: new THREE.Vector3(-ROOM.x, 0, -6), build: () => this.buildSlots() },
-      { at: new THREE.Vector3(0, 0, 8), build: () => this.buildDecor() },
-    ];
+    const steps: { at: THREE.Vector3; build: () => void }[] =
+      this.room === 'casino'
+        ? [
+            ...STATIONS.filter((st) => st.game).map((st) => ({ at: st.pos, build: () => this.buildStation(st) })),
+            { at: new THREE.Vector3(-ROOM.x, 0, -6), build: () => this.buildSlots() },
+            { at: new THREE.Vector3(0, 0, 8), build: () => this.buildDecor() },
+          ]
+        : this.room === 'lounge'
+          ? [
+              { at: new THREE.Vector3(-3.6, 0, -2.2), build: () => buildCorner(this.ctx, 0, this.stations) },
+              { at: new THREE.Vector3(3.6, 0, -2.2), build: () => buildCorner(this.ctx, 1, this.stations) },
+              { at: new THREE.Vector3(0, 0, 6), build: () => buildLoungeDecor(this.ctx) },
+            ]
+          : [
+              ...this.stations.filter((st) => st.kind === 'arcade').map((st) => ({ at: st.pos, build: () => buildCabinets(this.ctx, st) })),
+              { at: new THREE.Vector3(0, 0, -8), build: () => buildGiantScreen(this.ctx, this.stations.find((st) => st.kind === 'screen')!) },
+            ];
     steps.sort((a, b) => a.at.distanceTo(this.pos) - b.at.distanceTo(this.pos));
     for (const step of steps) {
       if (this.disposed) return;
@@ -182,6 +223,27 @@ export class CasinoFloor3D {
       await new Promise((r) => requestAnimationFrame(() => r(null)));
     }
   }
+
+  /** What the room builders use to add things (see world-types.ts). */
+  private readonly ctx: WorldCtx = {
+    get low() {
+      return false;
+    },
+    add: (...o) => this.target.add(...o),
+    collide: (x, z, r) => this.colliders.push({ x, z, r }),
+    pickable: (mesh, station) => this.pickables.push({ mesh, station }),
+    sign: (sprite, station) => this.signs.push({ sign: sprite, station }),
+    blink: (mat, speed = 1) => {
+      if (!this.blinkers.some((b) => b.mat === mat)) this.blinkers.push({ mat: mat as THREE.MeshBasicMaterial, phase: Math.random() * 10, speed });
+    },
+    sitter: (look, at, yaw, couch) => {
+      const a = new Avatar(0, look, { position: at.clone().setY(at.y - 0.06), rotationY: yaw, couch });
+      a.tag.visible = false;
+      this.target.add(a.group);
+      this.guests.push(a);
+    },
+    animate: (fn) => this.animations.push(fn),
+  };
 
   // ---------- Building the room ----------
 
@@ -633,10 +695,31 @@ export class CasinoFloor3D {
   }
 
   /** Walk up to a table (from a tap, or the list of tables in the overlay). */
+  /** How far from a thing you stop when walking up to it. */
+  private approachDistance(s: Station): number {
+    switch (s.kind) {
+      case 'slots':
+        return 2.7;
+      case 'cashier':
+        return 3.3;
+      case 'couch':
+        return 1.4;
+      case 'door':
+        return 1.6;
+      case 'arcade':
+        return 1.9;
+      case 'screen':
+        return 2.2;
+      default:
+        return s.game === 'roulette' ? 2.3 : 2.6;
+    }
+  }
+
   goTo(id: StationId): void {
-    const s = STATIONS.find((x) => x.id === id);
+    const s = this.stations.find((x) => x.id === id);
     if (!s) return;
-    const dist = s.kind === 'slots' ? 2.7 : s.game === 'roulette' ? 2.3 : s.game ? 2.6 : 3.3;
+    this.standUp();
+    const dist = this.approachDistance(s);
     // At a row of machines, walk to the nearest machine rather than the middle of the row.
     const point = this.approachPoint(s, dist);
     if (s.span) {
@@ -645,7 +728,7 @@ export class CasinoFloor3D {
       point.z -= along * Math.sin(s.yaw);
     }
     const face = point.clone().addScaledVector(new THREE.Vector3(Math.sin(s.yaw), 0, Math.cos(s.yaw)), -dist);
-    this.walkTo = { point, face, pitch: s.kind === 'slots' ? -0.06 : s.game ? -0.12 : 0.04 };
+    this.walkTo = { point, face, pitch: s.kind === 'slots' ? -0.06 : s.game ? -0.12 : s.kind === 'screen' ? 0.12 : s.kind === 'couch' ? -0.15 : 0.04 };
   }
 
   /** Distance from you to a table's center, or to the nearest point of a row of machines. */
@@ -663,6 +746,105 @@ export class CasinoFloor3D {
     this.keys.clear();
     this.stick = { x: 0, y: 0 };
     this.walkTo = null;
+  }
+
+  // ---------- Couches ----------
+
+  /** Sit on a couch (the nearest free seat). Returns false if it's full. */
+  sit(id: StationId): boolean {
+    const st = this.stations.find((x) => x.id === id);
+    if (!st?.seats) return false;
+    let best = -1;
+    let bestD = Infinity;
+    st.seats.forEach((p, i) => {
+      if (this.takenSeats.has(`${st.id}:${i}`)) return;
+      const d = p.distanceTo(this.pos);
+      if (d < bestD) {
+        bestD = d;
+        best = i;
+      }
+    });
+    if (best < 0) return false;
+    this.walkTo = null;
+    this.seat = { station: st, index: best, pos: st.seats[best]!.clone(), yaw: st.yaw };
+    this.takenSeats.add(`${st.id}:${best}`);
+    // Look the way the couch faces.
+    this.yaw = st.yaw + Math.PI;
+    this.pitch = -0.1;
+    this.opts.onSit?.(st);
+    return true;
+  }
+
+  standUp(): void {
+    if (!this.seat) return;
+    const s = this.seat;
+    this.seat = null;
+    this.takenSeats.delete(`${s.station.id}:${s.index}`);
+    this.pos.copy(s.pos).addScaledVector(new THREE.Vector3(Math.sin(s.yaw), 0, Math.cos(s.yaw)), 0.85);
+    this.opts.onSit?.(null);
+  }
+
+  get sitting(): Station | null {
+    return this.seat?.station ?? null;
+  }
+
+  /** Where you are, for the other players: position, facing, and the seat you're on. */
+  pose(): { x: number; z: number; yaw: number; seat: string | null } {
+    const p = this.seat ? this.seat.pos : this.pos;
+    return { x: +p.x.toFixed(2), z: +p.z.toFixed(2), yaw: +(this.yaw + Math.PI).toFixed(2), seat: this.seat ? `${this.seat.station.id}:${this.seat.index}` : null };
+  }
+
+  // ---------- Other players in the room ----------
+
+  private readonly people = new Map<string, { walker: Walker | null; sitter: Avatar | null; seat: string | null; look: string }>();
+
+  /** The other players in this room, as last heard: shown walking around or seated. */
+  setPeople(list: { id: string; name: string; look: Look; x: number; z: number; yaw: number; seat: string | null }[]): void {
+    const seen = new Set<string>();
+    for (const p of list) {
+      seen.add(p.id);
+      let v = this.people.get(p.id);
+      const lookKey = JSON.stringify(p.look);
+      if (v && (v.seat !== p.seat || v.look !== lookKey)) {
+        this.removePerson(p.id);
+        v = undefined;
+      }
+      if (!v) {
+        v = { walker: null, sitter: null, seat: p.seat, look: lookKey };
+        const st = p.seat ? this.stations.find((s) => s.id === p.seat!.split(':')[0]) : undefined;
+        const seatPos = st?.seats?.[Number(p.seat!.split(':')[1])];
+        if (st && seatPos) {
+          const a = new Avatar(0, p.look, { position: seatPos.clone().setY(-0.06), rotationY: st.yaw, couch: true });
+          a.setInfo({ name: p.name, balance: 'chatting', isTurn: false, away: false, host: false, bot: false });
+          this.scene.add(a.group);
+          v.sitter = a;
+          this.takenSeats.add(p.seat!);
+        } else {
+          v.walker = new Walker(p.look, p.name, p.x, p.z, p.yaw);
+          this.scene.add(v.walker.group);
+        }
+        this.people.set(p.id, v);
+      }
+      v.walker?.moveTo(p.x, p.z, p.yaw);
+      v.walker?.setName(p.name);
+    }
+    for (const id of [...this.people.keys()]) if (!seen.has(id)) this.removePerson(id);
+  }
+
+  /** A chat line above someone's head. */
+  say(id: string, text: string): void {
+    const v = this.people.get(id);
+    v?.walker?.say(text);
+    v?.sitter?.say(text);
+  }
+
+  private removePerson(id: string): void {
+    const v = this.people.get(id);
+    if (!v) return;
+    v.walker?.dispose();
+    v.sitter?.dispose();
+    if (v.seat) this.takenSeats.delete(v.seat);
+    this.people.delete(id);
   }
 
   /** A spot in front of a table, on its players' side. */
@@ -683,6 +865,7 @@ export class CasinoFloor3D {
 
   dispose(): void {
     this.disposed = true;
+    for (const id of [...this.people.keys()]) this.removePerson(id);
     cancelAnimationFrame(this.frame);
     window.removeEventListener('keydown', this.onKeyDown);
     window.removeEventListener('keyup', this.onKeyUp);
@@ -696,6 +879,12 @@ export class CasinoFloor3D {
 
   private move(dt: number): void {
     const k = this.keys;
+    if (this.seat) {
+      // Any walking input gets you up off the couch.
+      const wants = ['w', 's', 'a', 'd', 'arrowup', 'arrowdown'].some((x) => k.has(x)) || Math.hypot(this.stick.x, this.stick.y) > 0.3;
+      if (!wants) return;
+      this.standUp();
+    }
     let fwd = (k.has('w') || k.has('arrowup') ? 1 : 0) - (k.has('s') || k.has('arrowdown') ? 1 : 0) - this.stick.y;
     let side = (k.has('d') ? 1 : 0) - (k.has('a') ? 1 : 0) + this.stick.x;
     const turn = (k.has('arrowleft') || k.has('q') ? 1 : 0) - (k.has('arrowright') || k.has('e') ? 1 : 0);
@@ -730,8 +919,8 @@ export class CasinoFloor3D {
       this.bob += step * 6;
     }
     // Stay inside the room and out of the furniture.
-    this.pos.x = THREE.MathUtils.clamp(this.pos.x, -ROOM.x + 0.5, ROOM.x - 0.5);
-    this.pos.z = THREE.MathUtils.clamp(this.pos.z, -ROOM.z + 0.5, ROOM.z - 0.5);
+    this.pos.x = THREE.MathUtils.clamp(this.pos.x, -this.size.x + 0.5, this.size.x - 0.5);
+    this.pos.z = THREE.MathUtils.clamp(this.pos.z, -this.size.z + 0.5, this.size.z - 0.5);
     for (const c of this.colliders) {
       const dx = this.pos.x - c.x;
       const dz = this.pos.z - c.z;
@@ -760,6 +949,11 @@ export class CasinoFloor3D {
     this.prevMove = now;
     for (const d of this.dealers) d.update(dt);
     for (const a of this.guests) a.update(dt);
+    for (const fn of this.animations) fn(dt, this.clock);
+    for (const v of this.people.values()) {
+      v.walker?.update(dt);
+      v.sitter?.update(dt);
+    }
     // Roulette wheels keep turning; a ball goes round and round.
     for (const w of this.wheels) {
       w.rotor.rotation.y += dt * 0.5;
@@ -773,7 +967,7 @@ export class CasinoFloor3D {
     // Which table are we next to?
     let near: Station | null = null;
     let best = Infinity;
-    for (const s of STATIONS) {
+    for (const s of this.stations) {
       const d = this.distanceTo(s) - s.radius;
       if (d < NEAR - s.radius * 0.4 && d < best) {
         best = d;
@@ -784,6 +978,13 @@ export class CasinoFloor3D {
       this.near = near;
       this.opts.onNear(near);
     }
+    // Walking right into a doorway takes you through it.
+    if (near?.kind === 'door' && near.to && !this.walkTo && this.distanceTo(near) < near.radius + 0.25) {
+      const to = near.to;
+      this.near = null;
+      this.pos.addScaledVector(new THREE.Vector3(Math.sin(near.yaw), 0, Math.cos(near.yaw)), 1.2);
+      this.opts.onDoor?.(to);
+    }
     // Signs fade as you come close, so they don't block the view.
     this.signs.forEach(({ sign, station: s }) => {
       const d = Math.hypot(this.pos.x - s.pos.x, this.pos.z - s.pos.z);
@@ -791,7 +992,8 @@ export class CasinoFloor3D {
     });
 
     const bobY = Math.sin(this.bob) * 0.02;
-    this.camera.position.set(this.pos.x, EYE + bobY, this.pos.z);
+    if (this.seat) this.camera.position.set(this.seat.pos.x, 1.12, this.seat.pos.z);
+    else this.camera.position.set(this.pos.x, EYE + bobY, this.pos.z);
     this.camera.rotation.set(this.pitch, this.yaw, 0, 'YXZ');
     this.renderer.render(this.scene, this.camera);
 
@@ -829,93 +1031,6 @@ export class CasinoFloor3D {
 }
 
 // ---------- Textures and signs ----------
-
-let blobTex: THREE.CanvasTexture | null = null;
-const blobMats = new Map<number, THREE.MeshBasicMaterial>();
-
-/** A soft dark pool on the carpet: a cheap stand-in for a real-time shadow. */
-function blobShadow(w: number, d: number, strength: number): THREE.Mesh {
-  blobTex ??= canvasTex(128, 128, (ctx) => {
-    const g = ctx.createRadialGradient(64, 64, 0, 64, 64, 64);
-    g.addColorStop(0, 'rgba(0,0,0,1)');
-    g.addColorStop(0.55, 'rgba(0,0,0,0.6)');
-    g.addColorStop(1, 'rgba(0,0,0,0)');
-    ctx.fillStyle = g;
-    ctx.fillRect(0, 0, 128, 128);
-  });
-  let mat = blobMats.get(strength);
-  if (!mat) {
-    mat = new THREE.MeshBasicMaterial({ map: blobTex, transparent: true, opacity: strength, depthWrite: false, color: 0x000000 });
-    blobMats.set(strength, mat);
-  }
-  const m = new THREE.Mesh(new THREE.PlaneGeometry(w, d), mat);
-  m.rotation.x = -Math.PI / 2;
-  m.position.y = 0.006;
-  m.renderOrder = 1;
-  return m;
-}
-
-function canvasTex(w: number, h: number, draw: (ctx: CanvasRenderingContext2D) => void, repeat = false): THREE.CanvasTexture {
-  const c = document.createElement('canvas');
-  c.width = w;
-  c.height = h;
-  draw(c.getContext('2d')!);
-  const t = new THREE.CanvasTexture(c);
-  t.colorSpace = THREE.SRGBColorSpace;
-  if (repeat) t.wrapS = t.wrapT = THREE.RepeatWrapping;
-  t.anisotropy = 8;
-  return t;
-}
-
-/** A glowing marquee sign that always faces you. */
-function makeSign(title: string, sub: string, color: string, scale: number): THREE.Sprite {
-  const tex = canvasTex(1024, 300, (ctx) => {
-    const W = 1024;
-    const H = 300;
-    ctx.fillStyle = 'rgba(14, 8, 6, 0.88)';
-    roundRect(ctx, 12, 12, W - 24, H - 24, 40);
-    ctx.fill();
-    ctx.strokeStyle = '#d9b45a';
-    ctx.lineWidth = 8;
-    ctx.stroke();
-    // Bulbs around the edge.
-    for (let i = 0; i < 34; i++) {
-      const t = i / 34;
-      const [x, y] = t < 0.5 ? [40 + t * 2 * (W - 80), 32] : [40 + (t - 0.5) * 2 * (W - 80), H - 32];
-      const g = ctx.createRadialGradient(x, y, 0, x, y, 12);
-      g.addColorStop(0, '#fff6d8');
-      g.addColorStop(1, 'rgba(255, 210, 120, 0)');
-      ctx.fillStyle = g;
-      ctx.beginPath();
-      ctx.arc(x, y, 12, 0, Math.PI * 2);
-      ctx.fill();
-    }
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.shadowColor = color;
-    ctx.shadowBlur = 30;
-    ctx.fillStyle = color;
-    ctx.font = '800 96px "Playfair Display", Georgia, serif';
-    ctx.fillText(title, W / 2, H * 0.44, W - 120);
-    ctx.shadowBlur = 0;
-    ctx.fillStyle = 'rgba(246, 236, 210, 0.9)';
-    ctx.font = '600 40px Inter, system-ui, sans-serif';
-    ctx.fillText(sub, W / 2, H * 0.74, W - 120);
-  });
-  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false, toneMapped: false }));
-  s.scale.set(2.2 * scale, (2.2 * scale * 300) / 1024, 1);
-  return s;
-}
-
-function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number): void {
-  ctx.beginPath();
-  ctx.moveTo(x + r, y);
-  ctx.arcTo(x + w, y, x + w, y + h, r);
-  ctx.arcTo(x + w, y + h, x, y + h, r);
-  ctx.arcTo(x, y + h, x, y, r);
-  ctx.arcTo(x, y, x + w, y, r);
-  ctx.closePath();
-}
 
 function damaskTexture(): THREE.CanvasTexture {
   return canvasTex(

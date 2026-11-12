@@ -357,6 +357,10 @@ export interface ClientToServer {
   'roulette:rebet': (ack: Ack) => void;
   'roulette:ready': (ack: Ack) => void;
   'chat:send': (p: { text: string }, ack: Ack) => void;
+  /** The social message board (see src/server/bus.ts). */
+  'bus:sub': (p: { filter: string }) => void;
+  'bus:unsub': (p: { filter: string }) => void;
+  'bus:pub': (p: { topic: string; payload: string; retain?: boolean }) => void;
   /** Poker: fold, check, call, raise to `amount`, or go all in. */
   'poker:act': (p: { action: PokerAction; amount?: number }, ack: Ack) => void;
 }
@@ -368,4 +372,5 @@ export interface ServerToClient {
   kicked: () => void;
   /** The table is gone (e.g. the host of an online preview table left). */
   closed: (p: { reason: string }) => void;
+  'bus:msg': (p: { topic: string; payload: string }) => void;
 }

@@ -1,6 +1,8 @@
-// The walkable casino floor: the 3D room plus everything on top of it — your profile,
-// "Join with code", quick "walk to" buttons, the touch stick, and the card that opens
-// when you walk up to a table (Play solo / with bots / host for friends / how to play).
+// The rooms you walk around (Lounge, Casino, Arcade): the 3D room plus everything on top
+// of it — your profile, quick "walk to" and "go to" buttons, the touch stick, and the card
+// that opens when you walk up to something: a table (play solo / with bots / host for
+// friends), the cashier, slot machines, a couch (sit down), an arcade game (play) or a
+// doorway (go to the next room).
 
 import { type GameKind, REFILL_LIMIT, STARTING_CHIPS } from '../shared/protocol.js';
 import type { SlotMachine } from './slot-machine.js';
@@ -10,10 +12,21 @@ import { RULES } from './rules.js';
 import { CASINO_NAME, type LobbyActions, avatarBadge, stepper } from './screens.js';
 import { canRefill, inChallenge, prefs, store } from './storage.js';
 import { challenge } from './challenge.js';
-import type { CasinoFloor3D, Station, StationId } from './three/casino-floor.js';
+import type { CasinoFloor3D, Room, Station, StationId } from './three/casino-floor.js';
+import { ARCADE } from './arcade/catalog.js';
+import { playArcadeGame } from './arcade/player.js';
+import { account } from './account.js';
 
 export interface FloorScreenOptions extends LobbyActions {
   low: boolean;
+  /** Which room this is. */
+  room: Room;
+  /** The room you came from (you arrive at its doorway). */
+  from?: Room | null;
+  /** Go to another room. */
+  goRoom: (room: Room) => void;
+  /** Lets the chat/social layer show the other players and follow you around the room. */
+  onWorld?: (world: CasinoFloor3D | null) => void;
   /** Switch to the simple list of games. */
   listView: () => void;
   onAutoLow?: () => void;
@@ -51,7 +64,12 @@ export function floorScreen(a: FloorScreenOptions): { el: HTMLElement; dispose()
     }
   };
   const stage = h('div', { class: 'floor-stage' });
-  const loading = h('div', { class: 'loading floor-loading' }, h('div', { class: 'spinner' }), `Opening the doors of ${CASINO_NAME}…`);
+  const loading = h(
+    'div',
+    { class: 'loading floor-loading' },
+    h('div', { class: 'spinner' }),
+    a.room === 'casino' ? `Opening the doors of ${CASINO_NAME}…` : a.room === 'lounge' ? 'Welcome! Finding you a comfy spot…' : 'Powering up the arcade…',
+  );
   const me = { el: avatarBadge(prefs.look), dispose: () => {} };
   const profile = h(
     'button',
@@ -120,7 +138,7 @@ export function floorScreen(a: FloorScreenOptions): { el: HTMLElement; dispose()
   const top = h(
     'header',
     { class: 'floor-top' },
-    h('div', { class: 'floor-brand' }, h('span', { class: 'suit red' }, '♥'), CASINO_NAME, h('span', { class: 'suit' }, '♠')),
+    h('div', { class: `floor-brand ${a.room}` }, h('span', { class: 'suit red' }, '♥'), a.room === 'casino' ? CASINO_NAME : a.room === 'lounge' ? 'The Lounge' : 'The Arcade', h('span', { class: 'suit' }, '♠')),
     h('div', { class: 'spacer' }),
     wallet,
     h('button', { class: 'btn small challenge-btn', onclick: () => challenge.open() }, '🏆 Challenge'),
@@ -129,17 +147,30 @@ export function floorScreen(a: FloorScreenOptions): { el: HTMLElement; dispose()
     profile,
   );
   const touch = matchMedia('(pointer: coarse)').matches;
-  const hint = h('div', { class: 'floor-hint' }, touch ? 'Left thumb: walk · Right: look around · Tap a table to go there' : 'Walk with W A S D or the arrow keys · Drag to look · Click a table to walk to it');
+  const what = a.room === 'lounge' ? 'a couch or a doorway' : a.room === 'arcade' ? 'a game' : 'a table';
+  const hint = h('div', { class: 'floor-hint' }, touch ? `Left thumb: walk · Right: look around · Tap ${what} to go there` : `Walk with W A S D or the arrow keys · Drag to look · Click ${what} to walk to it`);
+  const roomBtn = (room: Room) =>
+    h('button', { class: `go room-${room}`, onclick: () => a.goRoom(room) }, room === 'lounge' ? '🛋 Lounge' : room === 'casino' ? '🎰 Casino' : '🕹 Arcade');
   const goButtons = h(
     'nav',
-    { class: 'floor-go', 'aria-label': 'Walk to a table' },
+    { class: 'floor-go', 'aria-label': 'Walk to' },
     h('span', { class: 'muted' }, 'Walk to'),
-    h('button', { class: 'go bj', onclick: () => walk('blackjack-solo') }, '🂡 Blackjack'),
-    h('button', { class: 'go rl', onclick: () => walk('roulette') }, '🎡 Roulette'),
-    h('button', { class: 'go pk', onclick: () => walk('poker') }, '♣ Poker'),
-    h('button', { class: 'go sl', onclick: () => walk('slots-left') }, '🎰 Slots'),
-    h('button', { class: 'go cs', onclick: () => walk('cashier') }, '💰 Cashier'),
+    ...(a.room === 'casino'
+      ? [
+          h('button', { class: 'go bj', onclick: () => walk('blackjack-solo') }, '🂡 Blackjack'),
+          h('button', { class: 'go rl', onclick: () => walk('roulette') }, '🎡 Roulette'),
+          h('button', { class: 'go pk', onclick: () => walk('poker') }, '♣ Poker'),
+          h('button', { class: 'go sl', onclick: () => walk('slots-left') }, '🎰 Slots'),
+          h('button', { class: 'go cs', onclick: () => walk('cashier') }, '💰 Cashier'),
+        ]
+      : a.room === 'arcade'
+        ? ARCADE.map((g) => h('button', { class: 'go arc', style: `--neon:${g.color}`, onclick: () => walk(g.id === 'game-night' ? 'arcade-game-night' : `arcade-${g.id}`) }, g.title))
+        : [h('button', { class: 'go couch', onclick: () => walk('couch-0-left') }, '🛋 A couch')]),
+    h('span', { class: 'go-sep' }),
+    ...(['lounge', 'casino', 'arcade'] as Room[]).filter((r) => r !== a.room).map(roomBtn),
   );
+  // Sitting on a couch: a button to stand up again.
+  const standBtn = h('button', { class: 'btn gold stand-up', hidden: true, onclick: () => floor?.standUp() }, '⬆ Stand up');
 
   // Playing a slot machine: the machine covers the floor, which pauses meanwhile.
   let machine: SlotMachine | null = null;
@@ -233,9 +264,62 @@ export function floorScreen(a: FloorScreenOptions): { el: HTMLElement; dispose()
     );
   };
 
+  /** A couch, a doorway, or an arcade game. */
+  const fillOther = (s: Station) => {
+    if (s.kind === 'couch') {
+      card.className = 'station-card lounge';
+      const seated = floor?.sitting === s;
+      card.replaceChildren(
+        h('div', { class: 'station-head' }, h('h2', {}, seated ? 'Comfy?' : 'A comfy couch'), h('p', { class: 'tagline' }, seated ? 'Chat with everyone from here: tap 💬 Chats.' : 'Sit down, relax and chat with the others.')),
+        h(
+          'div',
+          { class: 'game-actions' },
+          seated
+            ? h('button', { class: 'btn ghost', onclick: () => floor?.standUp() }, '⬆ Stand up')
+            : h('button', { class: 'btn gold big', onclick: () => (floor?.sit(s.id) ? fillOther(s) : toast('This couch is full: try another one', 'error')) }, '🛋 Sit down'),
+        ),
+      );
+      return;
+    }
+    if (s.kind === 'door' && s.to) {
+      const to = s.to;
+      card.className = `station-card door-${to}`;
+      card.replaceChildren(
+        h('div', { class: 'station-head' }, h('h2', {}, s.title), h('p', { class: 'tagline' }, s.sub)),
+        h('div', { class: 'game-actions' }, h('button', { class: 'btn gold big', onclick: () => a.goRoom(to) }, `Go to ${s.title.replace(/^The /, 'the ')} →`)),
+      );
+      return;
+    }
+    if ((s.kind === 'arcade' || s.kind === 'screen') && s.arcade) {
+      const g = ARCADE.find((x) => x.id === s.arcade)!;
+      card.className = 'station-card arcade';
+      card.style.setProperty('--neon', g.color);
+      card.replaceChildren(
+        h('div', { class: 'station-head' }, h('h2', {}, g.title), h('p', { class: 'tagline' }, g.tagline)),
+        h(
+          'div',
+          { class: 'game-actions' },
+          h('button', {
+            class: 'btn gold big',
+            onclick: () => {
+              floor?.setPaused(true);
+              void playArcadeGame(g.id, () => {
+                floor?.setPaused(false);
+                // Your new best scores and saves go to your account right away.
+                void account.saveNow();
+              });
+            },
+          }, '▶ Play'),
+        ),
+        h('p', { class: 'muted small' }, 'Free play: no chips needed. Your progress is saved with your account.'),
+      );
+    }
+  };
+
   const fill = (s: Station) => {
-    lastStation.set(s.id);
+    if (a.room === 'casino') lastStation.set(s.id);
     lastNear = s;
+    if (s.kind === 'couch' || s.kind === 'door' || s.kind === 'arcade' || s.kind === 'screen') return fillOther(s);
     if (s.kind === 'slots') return fillSlots();
     if (!s.game) return fillCashier();
     const game: GameKind = s.game;
@@ -255,17 +339,26 @@ export function floorScreen(a: FloorScreenOptions): { el: HTMLElement; dispose()
   const knob = h('div', { class: 'knob' });
   const stick = h('div', { class: 'stick', hidden: true }, knob);
 
-  const el = h('main', { class: 'floor-screen' }, stage, loading, top, joinBox, hint, goButtons, card, stick);
+  const el = h('main', { class: `floor-screen room-${a.room}` }, stage, loading, top, joinBox, hint, goButtons, card, stick, standBtn);
 
   let disposed = false;
   void (async () => {
     try {
-      const [{ CasinoFloor3D }, { webglAvailable }] = await Promise.all([import('./three/casino-floor.js'), import('./three/scene3d.js')]);
+      const [{ CasinoFloor3D, stationsOf }, { webglAvailable }] = await Promise.all([import('./three/casino-floor.js'), import('./three/scene3d.js')]);
       if (disposed) return;
       if (!webglAvailable()) throw new Error('no WebGL');
+      // Coming through a doorway: arrive at the matching doorway of this room.
+      const door = a.from ? stationsOf(a.room).find((st) => st.kind === 'door' && st.to === a.from) : undefined;
+      const back = a.room === 'casino' ? lastStation.takeStart() : null;
       floor = new CasinoFloor3D(stage, {
+        room: a.room,
         low: a.low,
-        start: lastStation.takeStart(),
+        start: back ?? door?.id ?? null,
+        onSit: (st) => {
+          standBtn.hidden = !st;
+          if (lastNear) fill(lastNear);
+        },
+        onDoor: (to) => a.goRoom(to),
         onNear: (s) => {
           card.hidden = !s;
           hint.hidden = Boolean(s);
@@ -283,6 +376,7 @@ export function floorScreen(a: FloorScreenOptions): { el: HTMLElement; dispose()
       // The doors open once the room can draw smoothly.
       await floor.ready;
       document.body.dataset.floorReady = '1';
+      a.onWorld?.(floor);
       if (location.search.includes('debug') || store.local.get('bj:debug')) (globalThis as { bjFloor?: unknown }).bjFloor = floor;
       if (disposed) return;
       loading.classList.add('done');
@@ -298,6 +392,7 @@ export function floorScreen(a: FloorScreenOptions): { el: HTMLElement; dispose()
     el,
     dispose() {
       disposed = true;
+      a.onWorld?.(null);
       machine?.close();
       delete document.body.dataset.floorReady;
       floor?.dispose();

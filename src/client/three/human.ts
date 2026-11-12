@@ -406,7 +406,7 @@ export interface SeatedBody {
 }
 
 /** A seated player, hips at the origin, forearms resting on the table rail. */
-export function buildSeatedBody(look: Look, railHeight: number): SeatedBody {
+export function buildSeatedBody(look: Look, railHeight: number, withLegs = false): SeatedBody {
   const group = new THREE.Group();
   const shirt = mat(outfitColor(look), 0.78);
   const skin = skinMat(look);
@@ -435,8 +435,21 @@ export function buildSeatedBody(look: Look, railHeight: number): SeatedBody {
   head.group.position.y = 0.565;
   torso.add(head.group);
 
+  // On a couch (no table hiding them): thighs forward, shins down, shoes.
+  if (withLegs) {
+    const shoe = mat('#16171b', 0.5);
+    for (const sx of [-0.095, 0.095]) {
+      group.add(limb(new THREE.Vector3(sx, 0.52, 0.02), new THREE.Vector3(sx * 1.05, 0.5, 0.42), 0.068, pants));
+      group.add(limb(new THREE.Vector3(sx * 1.05, 0.5, 0.42), new THREE.Vector3(sx * 1.05, 0.08, 0.46), 0.055, pants));
+      const foot = mesh(new THREE.BoxGeometry(0.09, 0.06, 0.2), shoe);
+      foot.position.set(sx * 1.05, 0.03, 0.52);
+      group.add(foot);
+    }
+  }
   const railY = railHeight - 0.62 + 0.06;
-  const rest = { left: new THREE.Vector3(-0.08, railY, 0.36), right: new THREE.Vector3(0.08, railY, 0.36) };
+  // At a table the hands rest on its rail; on a couch they rest on the lap.
+  const restZ = withLegs ? 0.3 : 0.36;
+  const rest = { left: new THREE.Vector3(-0.08, railY, restZ), right: new THREE.Vector3(0.08, railY, restZ) };
   const arms = {
     left: new JointedArm(new THREE.Vector3(-0.175, 0.37, 0), 0.27, 0.26, 0.034, shirt, skin, torso, new THREE.Vector3(-0.8, -0.6, -0.2).normalize()),
     right: new JointedArm(new THREE.Vector3(0.175, 0.37, 0), 0.27, 0.26, 0.034, shirt, skin, torso, new THREE.Vector3(0.8, -0.6, -0.2).normalize()),
@@ -492,4 +505,66 @@ export class Blinker {
     if (this.t < 0) this.t = 2.5 + Math.random() * 4;
     for (const l of lids) l.scale.y = closed ? 1 : 0.15;
   }
+}
+
+// ---------- Standing people (other players walking around) ----------
+
+export interface StandingBody {
+  group: THREE.Group;
+  head: Head;
+  /** Hip and shoulder pivots, swung while walking. */
+  legs: [THREE.Group, THREE.Group];
+  arms: [THREE.Group, THREE.Group];
+  headTop: number;
+}
+
+/** A person standing up, about 1.75 m tall, facing +z. Legs and arms swing from pivots. */
+export function buildStandingBody(look: Look): StandingBody {
+  const group = new THREE.Group();
+  const shirt = mat(outfitColor(look), 0.78);
+  const skin = skinMat(look);
+  const pants = mat('#1f2026', 0.85);
+  const shoe = mat('#16171b', 0.5);
+  const pivot = (x: number, y: number) => {
+    const g = new THREE.Group();
+    g.position.set(x, y, 0);
+    group.add(g);
+    return g;
+  };
+  const legs: [THREE.Group, THREE.Group] = [pivot(-0.09, 0.9), pivot(0.09, 0.9)];
+  for (const leg of legs) {
+    const m = mesh(new THREE.CapsuleGeometry(0.065, 0.74, 4, 12), pants);
+    m.position.y = -0.43;
+    const foot = mesh(new THREE.BoxGeometry(0.1, 0.07, 0.24), shoe);
+    foot.position.set(0, -0.86, 0.05);
+    leg.add(m, foot);
+  }
+  const hips = mesh(new THREE.CapsuleGeometry(0.13, 0.1, 4, 12), pants);
+  hips.rotation.z = Math.PI / 2;
+  hips.position.y = 0.94;
+  const chest = mesh(new THREE.CapsuleGeometry(0.15, 0.3, 8, 20), shirt);
+  chest.scale.set(1.1, 1, 0.66);
+  chest.position.y = 1.22;
+  const shoulders = mesh(new THREE.CapsuleGeometry(0.065, 0.26, 6, 14), shirt);
+  shoulders.rotation.z = Math.PI / 2;
+  shoulders.scale.set(1, 1, 0.8);
+  shoulders.position.y = 1.43;
+  const neck = mesh(new THREE.CylinderGeometry(0.036, 0.042, 0.08, 14), skin);
+  neck.position.y = 1.5;
+  group.add(hips, chest, shoulders, neck);
+  const arms: [THREE.Group, THREE.Group] = [pivot(-0.2, 1.42), pivot(0.2, 1.42)];
+  for (const arm of arms) {
+    const sleeve = mesh(new THREE.CapsuleGeometry(0.045, 0.5, 4, 10), shirt);
+    sleeve.position.y = -0.3;
+    const hand = mesh(new THREE.SphereGeometry(0.045, 12, 10), skin);
+    hand.position.y = -0.6;
+    arm.add(sleeve, hand);
+  }
+  const head = buildHead(look);
+  head.group.position.y = 1.64;
+  group.add(head.group);
+  // Rigid parts: one mesh per material.
+  for (const p of [...legs, ...arms]) mergeStatic(p);
+  mergeStatic(group, [...legs, ...arms, head.group]);
+  return { group, head, legs, arms, headTop: 1.78 };
 }

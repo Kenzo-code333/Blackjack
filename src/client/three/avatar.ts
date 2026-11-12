@@ -21,9 +21,12 @@ export class Avatar {
   private bubbleUntil = 0;
   private clock = 0;
   private gesture: { kind: Gesture; start: number } | null = null;
+  /** Sitting on a couch (legs showing, hands on the lap) rather than at a table. */
+  private couch = false;
 
   /** `place` overrides the blackjack seat position (used at the poker table). */
-  constructor(angle: number, look: Look, place?: { position: THREE.Vector3; rotationY: number }) {
+  constructor(angle: number, look: Look, place?: { position: THREE.Vector3; rotationY: number; couch?: boolean }) {
+    this.couch = place?.couch ?? false;
     this.setLook(look);
     this.group.add(this.tag, this.bubble);
     this.bubble.visible = false;
@@ -38,7 +41,7 @@ export class Avatar {
     if (key === this.lookKey) return;
     this.lookKey = key;
     if (this.body) this.group.remove(this.body.group);
-    this.body = buildSeatedBody(look, TABLE_Y);
+    this.body = buildSeatedBody(look, this.couch ? 0.46 : TABLE_Y, this.couch);
     this.group.add(this.body.group);
     this.tag.position.set(0, this.body.headTop + 0.1, 0);
     this.bubble.position.set(0, this.body.headTop + 0.22, 0);

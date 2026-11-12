@@ -3,6 +3,7 @@ import { type Socket, io as connect } from 'socket.io-client';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { ChatMessage, ClientToServer, JoinResult, PublicState, ServerToClient } from '../shared/protocol.js';
 import { AccountStore } from './accounts.js';
+import { Bus } from './bus.js';
 import { ChallengeStore } from './competitions.js';
 import { type GameServer, createGameServer } from './app.js';
 import type { Table } from './table.js';
@@ -19,7 +20,7 @@ beforeEach(async () => {
     rejoinGraceMs: 300,
     emptyRoomTtlMs: 300,
     timing: { bettingMs: 5000, cardMs: 1, revealMs: 1, resultsMs: 200, turnMs: 5000, insuranceMs: 5000 },
-  }, new AccountStore(null), new ChallengeStore(null));
+  }, new AccountStore(null), new ChallengeStore(null), new Bus(null));
   await new Promise<void>((r) => server.http.listen(0, r));
   url = `http://localhost:${(server.http.address() as AddressInfo).port}`;
 });
@@ -319,6 +320,6 @@ describe('socket server', () => {
     const me = await fetch(url + '/api/me', { headers: { authorization: `Bearer ${other.token}` } }).then((r) => r.json());
     expect(me.data['bj:chips']).toBe('2400');
     expect((await fetch(url + '/api/me', { headers: { authorization: 'Bearer nope' } })).status).toBe(401);
-    expect((await post('/api/me', { data: { x: 'y'.repeat(30_000) } }, up.token as string, 'PUT')).ok).toBe(false);
+    expect((await post('/api/me', { data: { x: 'y'.repeat(420_000) } }, up.token as string, 'PUT')).ok).toBe(false);
   });
 });

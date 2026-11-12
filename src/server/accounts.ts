@@ -25,7 +25,8 @@ export interface AccountRecord {
 export type AccountResult = { ok: true; email: string; token: string; data: Record<string, unknown> } | { ok: false; error: string };
 
 const EMAIL = /^[^\s@]{1,64}@[^\s@]{1,190}\.[^\s@]{2,24}$/;
-export const MAX_DATA_BYTES = 24_000;
+/** Room for the profile plus the arcade games' saves (custom race tracks can be large). */
+export const MAX_DATA_BYTES = 400_000;
 
 export function cleanEmail(raw: unknown): string | null {
   if (typeof raw !== 'string') return null;

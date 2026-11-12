@@ -1,4 +1,4 @@
-# The Velvet Ace: Blackjack, Roulette & Texas Hold'em
+# The Velvet Ace: a casino, a lounge and an arcade
 
 A multiplayer casino in your browser, seen in first person from your seat. Make your avatar,
 pick a table nickname, then choose **Blackjack** (you against the dealer) or **Texas Hold'em
@@ -12,6 +12,17 @@ open a link. No accounts, no installs, play money only.
   your email and password (AES-256-GCM, PBKDF2): only someone with both can find, read or
   overwrite the save. The claude.ai preview can't reach outside services, so there accounts
   stay in that browser
+- **Three rooms to walk around** in 3D: the **Lounge** where you arrive (couches you can sit on,
+  people chatting, a fireplace), the **Casino** (tables, slots, cashier) and the **Arcade**
+  (blue neon, free games: Orbit Hop, PolyRush, and Game Night on a giant screen). Doorways
+  and quick buttons take you between rooms; other players appear walking around
+- **Chats like WhatsApp** (💬): everyone who plays (online status, which room), friend
+  requests, private messages and group chats (end-to-end encrypted: ECDH P-256 keys per
+  player, AES-256-GCM), and a global chat. Global messages also appear above people's heads.
+  Works on the server version and in the file/website (through the public relays); chat
+  history lives on the message board, so it follows you to other devices
+- **Everything is saved to your account**, including the arcade games' own saves (best
+  scores, PolyRush tracks and settings, Game Night history) and your friends and chats
 - **Your avatar and nickname**, then a **3D casino floor** you walk around: go up to a
   table to play, press the red **Leave** button to walk away (a simple list view is there too)
 - **Your chips go with you** from table to table (you start with 1,000). A free refill to
@@ -183,6 +194,13 @@ In the Render dashboard: **New +** → **Blueprint** → select `kenzo-code333/b
 invite link (`https://blackjack-xxxx.onrender.com/table/ABC123`) to a friend.
 
 From now on, every push to `main` redeploys automatically.
+
+**The arcade games** are in `src/client/arcade/` (each a whole HTML page). They run in a frame
+that shares the page's storage, so their saves (names starting `orbitHop`, `polyrush.`,
+`gamenight.`) go into your profile. PolyRush's online races use PeerJS's free cloud server;
+Game Night's online rooms need its own server (its offline and same-device modes work here).
+
+**The message board** for chats is kept in `data/bus.json` (or `BUS_FILE`) on the server.
 
 **Accounts on Render:** accounts are saved in `data/accounts.json` (or the path in the
 `ACCOUNTS_FILE` environment variable). Passwords are stored only as salted scrypt hashes.

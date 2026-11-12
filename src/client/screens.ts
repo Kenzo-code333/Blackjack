@@ -10,6 +10,9 @@ import { h, toast } from './dom.js';
 import { RULES, rulesContent } from './rules.js';
 import { prefs } from './storage.js';
 import { readStats } from './stats.js';
+import { ARCADE } from './arcade/catalog.js';
+import { playArcadeGame } from './arcade/player.js';
+import { account } from './account.js';
 
 export const CASINO_NAME = 'The Velvet Ace';
 
@@ -91,7 +94,7 @@ export function avatarBadge(look: Look): HTMLElement {
 
 // ---------- Profile (the home page) ----------
 
-/** Your avatar and nickname. "Enter the casino" takes you to the lobby. */
+/** Your avatar and nickname. "Enter" takes you to the Lounge. */
 export interface AccountBar {
   email: string | null;
   where: 'server' | 'cloud' | 'device';
@@ -185,7 +188,7 @@ export function profileScreen(onEnter: () => void, acct?: AccountBar): { el: HTM
         h('label', { class: 'field-label', for: 'name' }, 'Table nickname'),
         name,
         rows,
-        h('button', { class: 'btn gold big enter', type: 'submit' }, 'Enter the casino'),
+        h('button', { class: 'btn gold big enter', type: 'submit' }, 'Enter the Velvet Ace'),
       ),
     ),
     statsPanel(),
@@ -460,6 +463,27 @@ export function lobbyScreen(a: LobbyActions): { el: HTMLElement; dispose(): void
     ),
   );
 
+  // The arcade: free games, no chips.
+  const arcade = h(
+    'section',
+    { class: 'arcade-list' },
+    h('h2', {}, '🕹 The Arcade'),
+    h('p', { class: 'muted' }, 'Free games: no chips needed. Your progress is saved with your account.'),
+    h(
+      'div',
+      { class: 'arcade-cards' },
+      ...ARCADE.map((g) =>
+        h(
+          'article',
+          { class: 'arcade-card', style: `--neon:${g.color}` },
+          h('h3', {}, g.title),
+          h('p', {}, g.tagline),
+          h('button', { class: 'btn gold', onclick: () => void playArcadeGame(g.id, () => void account.saveNow()) }, '▶ Play'),
+        ),
+      ),
+    ),
+  );
+
   // Join a friend's table.
   const code = h('input', {
     class: 'field code',
@@ -520,6 +544,7 @@ export function lobbyScreen(a: LobbyActions): { el: HTMLElement; dispose(): void
     h('h1', { class: 'screen-title center' }, 'Choose your table'),
     h('div', { class: 'center lobby-actions' }, a.floorView ? h('button', { class: 'btn gold', onclick: a.floorView }, '🚶 Walk the casino floor in 3D') : null, a.challenge ? h('button', { class: 'btn small challenge-btn', onclick: a.challenge }, '🏆 Challenge your friends') : null),
     h('div', { class: 'game-cards' }, blackjack, roulette, poker, slots),
+    arcade,
     friends,
     h('p', { class: 'fine-print' }, 'Play money only. No real money, ever.'),
   );
