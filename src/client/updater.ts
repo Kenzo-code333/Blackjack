@@ -1,11 +1,15 @@
-// Keeps the downloaded game file up to date, so nobody needs to be sent a new file.
+// Keeps the downloaded game file up to date by itself, so nobody needs to be sent a new file
+// and nobody has to press anything.
 //
-// The file (dist/blackjack.html) carries its build time in `window.__BJ_FILE__`. While you
-// play, it quietly asks GitHub for the latest version (release/version.json in the game's
-// public repository). When there's a newer one it downloads it, keeps it in this browser
-// (IndexedDB) and offers to restart; from then on, opening the same old file starts the new
-// version straight away, even offline. Your chips, account and saves stay where they were
-// (the new version runs at the same address as the file, so it sees the same storage).
+// The file (dist/blackjack.html) carries its build time in `window.__BJ_FILE__`. Each time it
+// opens it asks GitHub (release/version.json in the game's public repository) whether there
+// is a newer version, waiting only a moment; if there is, it downloads it and starts it
+// straight away. While you play it asks again every few minutes and whenever you come back to
+// the game; a new version is downloaded in the background and the game restarts into it at
+// the first moment that interrupts nothing (never at a table, in an arcade game, at a slot
+// machine, in the chats or while typing). Downloaded versions are kept in this browser
+// (IndexedDB), so the old file starts the newest version even offline. Chips, account and
+// saves stay where they were: the new version runs at the same address as the file.
 //
 // Only the downloaded file does this: the website is always the latest anyway.
 
@@ -29,7 +33,6 @@ const SOURCES = [
 const DB = 'bj-updates';
 const STORE = 'files';
 const KEY = 'latest';
-const UPDATE_NOW = 'bj:update-now';
 
 const running = (): Build | null => (typeof window !== 'undefined' ? (window.__BJ_FILE__ ?? null) : null);
 
@@ -75,32 +78,56 @@ function run(html: string): void {
 
 // ---------- At startup ----------
 
+const JUST_UPDATED = 'bj:just-updated';
+
+/** Resolves to null if `p` takes longer than `ms`. */
+const within = <T>(p: Promise<T>, ms: number) => Promise.race([p, new Promise<null>((r) => setTimeout(() => r(null), ms))]);
+
+/** A small full-screen "Updating…" card while a new version downloads at startup. */
+function splash(): () => void {
+  const el = document.createElement('div');
+  el.className = 'update-splash';
+  el.innerHTML = '<div class="update-card"><div class="update-spin"></div><b>Updating the game…</b><small>Getting the newest version. This only takes a moment.</small></div>';
+  document.body.append(el);
+  return () => el.remove();
+}
+
 /**
- * Called before the game starts. If a newer version was downloaded earlier, starts that
- * one instead and returns true (the caller then does nothing else).
+ * Called before the game starts. Checks (briefly) whether a newer version has been
+ * published; if so downloads it and starts it right away. Otherwise starts the newest
+ * version downloaded earlier, if any. Returns true when another version took over.
  */
 export async function bootLatest(): Promise<boolean> {
   const me = running();
   if (!me) return false;
   try {
-    // "Restart & update" was pressed but the version couldn't be kept in this browser:
-    // fetch it again now, before the game starts.
-    const wanted = sessionStorage.getItem(UPDATE_NOW);
-    if (wanted) sessionStorage.removeItem(UPDATE_NOW);
-    const saved = await loadSaved();
-    if (saved && saved.built > me.built && looksRight(saved.html)) {
-      run(saved.html);
-      return true;
+    // The version that just took over doesn't need to ask again.
+    if (sessionStorage.getItem(JUST_UPDATED) === String(me.built)) {
+      sessionStorage.removeItem(JUST_UPDATED);
+      return false;
     }
+    const saved = await loadSaved();
     // An older copy than this file (a newer file was opened): no use any more. (An equal one
     // is the version running right now, started from the saved copy: keep it.)
     if (saved && saved.built < me.built) void forget();
-    if (wanted) {
-      const html = await fetchText(`${wanted}blackjack.html`);
+    const best = saved && saved.built > me.built && looksRight(saved.html) ? saved : null;
+    // Is there something newer still? Only wait a moment: offline or slow, just play.
+    const online = navigator.onLine ? await within(latest(), 2500) : null;
+    if (online && online.built > Math.max(me.built, best?.built ?? 0)) {
+      const done = splash();
+      const html = await within(fetchText(`${online.base}blackjack.html`), 25000);
       if (html && looksRight(html)) {
+        await save({ built: online.built, version: online.version, html });
+        sessionStorage.setItem(JUST_UPDATED, String(online.built));
         run(html);
         return true;
       }
+      done();
+    }
+    if (best) {
+      sessionStorage.setItem(JUST_UPDATED, String(best.built));
+      run(best.html);
+      return true;
     }
   } catch {
     /* start this version */
@@ -137,57 +164,64 @@ async function latest(): Promise<(Build & { base: string }) | null> {
 }
 
 let checking = false;
-let offered = false;
+let ready = false;
 
 async function check(): Promise<void> {
   const me = running();
-  if (!me || checking || offered || !navigator.onLine) return;
+  if (!me || checking || ready || !navigator.onLine) return;
   checking = true;
   try {
     const v = await latest();
     if (!v || v.built <= me.built) return;
     const saved = await loadSaved();
-    let kept = Boolean(saved && saved.built >= v.built);
-    if (!kept) {
+    if (!(saved && saved.built >= v.built)) {
       const html = await fetchText(`${v.base}blackjack.html`);
       if (!html || !looksRight(html)) return;
-      kept = await save({ built: v.built, version: v.version, html });
+      // If it can't be kept in this browser, the restart downloads it again (bootLatest).
+      await save({ built: v.built, version: v.version, html });
     }
-    offer(kept ? null : v.base);
+    ready = true;
+    applyWhenSafe();
   } finally {
     checking = false;
   }
 }
 
-/** The little bar: "A new version is ready · Restart & update". */
-function offer(fetchFrom: string | null): void {
-  if (offered) return;
-  offered = true;
-  const bar = document.createElement('div');
-  bar.className = 'update-bar';
-  bar.setAttribute('role', 'status');
-  const text = document.createElement('span');
-  text.textContent = '✨ A new version of the game is ready';
-  const go = document.createElement('button');
-  go.className = 'btn gold tiny';
-  go.textContent = 'Restart & update';
-  go.onclick = () => {
-    if (fetchFrom) sessionStorage.setItem(UPDATE_NOW, fetchFrom);
-    location.reload();
-  };
-  const later = document.createElement('button');
-  later.className = 'btn ghost tiny';
-  later.textContent = fetchFrom ? 'Later' : 'Next time';
-  later.title = fetchFrom ? '' : 'It starts by itself the next time you open the game';
-  later.onclick = () => bar.remove();
-  bar.append(text, go, later);
-  document.body.append(bar);
+/**
+ * Not in the middle of something: at a game table, in an arcade game, at a slot machine,
+ * in the chats, signing in, in a dialog or typing.
+ */
+function safeMoment(): boolean {
+  if (document.querySelector('.table-view, .arcade-overlay, .slot-cabinet, .chat-overlay:not([hidden]), .login-screen, dialog[open], .modal, .update-splash')) return false;
+  const a = document.activeElement;
+  return !(a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.tagName === 'SELECT'));
 }
 
-/** Looks for a new version a little after starting, then every 20 minutes. */
+/** Restarts into the new version as soon as it won't interrupt anything. */
+function applyWhenSafe(): void {
+  const tryNow = () => {
+    if (!safeMoment()) return false;
+    clearInterval(timer);
+    const note = document.createElement('div');
+    note.className = 'update-bar';
+    note.setAttribute('role', 'status');
+    note.textContent = '✨ Updating to the newest version…';
+    document.body.append(note);
+    // Come back to the same room afterwards (main.ts), then restart after a moment to read
+    // the note (saves go out as the page closes).
+    window.dispatchEvent(new Event('bj:before-update'));
+    setTimeout(() => location.reload(), 1200);
+    return true;
+  };
+  if (tryNow()) return;
+  const timer = setInterval(tryNow, 2000);
+}
+
+/** Looks for a new version right after starting, every 5 minutes, and on coming back. */
 export function watchForUpdates(): void {
   if (!running()) return;
-  setTimeout(() => void check(), 8000);
-  setInterval(() => void check(), 20 * 60 * 1000);
+  setTimeout(() => void check(), 3000);
+  setInterval(() => void check(), 5 * 60 * 1000);
   window.addEventListener('online', () => void check());
+  document.addEventListener('visibilitychange', () => !document.hidden && void check());
 }

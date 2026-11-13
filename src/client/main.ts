@@ -36,6 +36,21 @@ const net = new Net(globals.__bjLocalSocket);
 // An invite link to the preview ends in #table-abc123: open the join screen for that table.
 const inviteFromHash = () => preview?.invitedCode() ?? null;
 let currentPath = PREVIEW ? (inviteFromHash() ? `/invite/${inviteFromHash()}` : '/') : location.pathname;
+// The game just restarted into a new version (updater.ts): go back to the room you were in.
+// (Kept for a minute rather than read once: the restart can start the page more than once.)
+try {
+  const resume = JSON.parse(sessionStorage.getItem('bj:resume') ?? 'null') as { path: string; at: number } | null;
+  if (resume && Date.now() - resume.at < 60_000 && /^\/(lounge|casino|arcade|lobby)$/.test(resume.path)) currentPath = resume.path;
+} catch {
+  /* no session storage */
+}
+window.addEventListener('bj:before-update', () => {
+  try {
+    sessionStorage.setItem('bj:resume', JSON.stringify({ path: currentPath, at: Date.now() }));
+  } catch {
+    /* no session storage */
+  }
+});
 /** Preview: the code of the online table we're at (hosting or joined), if any. */
 let onlineCode: string | null = null;
 /** Open the invite panel as soon as the next table view appears (right after creating a table). */
